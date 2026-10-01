@@ -1,0 +1,52 @@
+:root { font-family: Inter, "Segoe UI", sans-serif; color: #1e293b; background: #f4f6fb; font-synthesis: none; }
+* { box-sizing: border-box; }
+body { margin: 0; }
+#app { height: 100vh; display: flex; flex-direction: column; padding: 0 22px 16px; gap: 16px; }
+header { display: flex; align-items: center; justify-content: space-between; padding: 22px 2px 4px; gap: 20px; }
+.brand { display: flex; align-items: center; gap: 12px; }
+.logo { width: 44px; height: 44px; display: grid; place-items: center; background: #4338ca; color: white; font-weight: 700; border-radius: 12px; }
+h1 { margin: 0; font-size: 21px; font-weight: 650; letter-spacing: -.5px; }
+.brand p { margin: 3px 0 0; font-size: 12px; color: #64748b; }
+.example-control { display: flex; align-items: center; gap: 12px; font-size: 12px; color: #64748b; }
+.header-controls { display: flex; align-items: center; gap: 20px; flex-wrap: wrap; }
+.view-control { display: flex; align-items: center; gap: 12px; font-size: 12px; color: #64748b; }
+#view { min-width: 90px; }
+select, button { font: inherit; color: #334155; border: 1px solid #dbe1ed; background: white; border-radius: 7px; }
+select { padding: 9px 12px; min-width: 230px; }
+button { cursor: pointer; padding: 6px 10px; font-size: 12px; }
+button:hover:not(:disabled) { background: #eef2ff; border-color: #a5b4fc; }
+button:disabled { opacity: .4; cursor: default; }
+button:focus-visible, select:focus-visible { outline: 2px solid #6366f1; outline-offset: 2px; }
+main { display: grid; grid-template-columns: minmax(320px, .9fr) minmax(420px, 1.2fr); flex: 1; min-height: 280px; gap: 16px; }
+.pane { border: 1px solid #dfe4ef; background: white; border-radius: 12px; overflow: hidden; display: flex; flex-direction: column; min-width: 0; box-shadow: 0 2px 8px #1e293b04; }
+.pane-header { min-height: 51px; padding: 10px 16px; display: flex; align-items: center; justify-content: space-between; gap: 10px; border-bottom: 1px solid #edf0f6; }
+h2 { font-size: 12px; margin: 0; font-weight: 650; }
+.badge { font-size: 9px; font-weight: 700; letter-spacing: 1px; color: #0f766e; background: #e6f6f1; padding: 4px 7px; border-radius: 5px; }
+#editor { flex: 1; min-height: 200px; }
+.hint { padding: 10px 16px; font-size: 11px; color: #7c879b; border-top: 1px solid #edf0f6; }
+.tools { display: flex; gap: 5px; align-items: center; }
+.separator { height: 16px; width: 1px; background: #e2e8f0; margin: 0 3px; }
+#status { padding: 9px 16px; font-size: 11px; background: #f8fafc; color: #64748b; border-bottom: 1px solid #edf0f6; }
+#status[data-state="ok"] { color: #047857; background: #f0fdf7; }
+#status[data-state="error"] { color: #9a3412; background: #fff7ed; }
+#viewport { flex: 1; min-height: 0; overflow: auto; background-image: radial-gradient(#dbe2ee .65px, transparent .65px); background-size: 16px 16px; }
+#graph { min-height: 100%; min-width: 100%; width: max-content; padding: 20px; display: grid; place-items: center; }
+#graph.stale svg { opacity: .35; }
+#graph svg { display: block; }
+#graph g.node { cursor: pointer; }
+#graph g.node:hover polygon, #graph g.node:hover path { fill: #dbeafe; stroke: #4338ca; }
+.placeholder { font-size: 13px; color: #94a3b8; }
+footer { min-height: 96px; max-height: 160px; flex-shrink: 0; overflow: auto; padding: 14px 17px; border: 1px solid #dfe4ef; background: white; border-radius: 12px; }
+#error-count { color: #64748b; font-weight: 400; margin-left: 5px; }
+#diagnostics { list-style: none; padding: 0; margin: 9px 0 0; font-size: 12px; }
+#diagnostics li { margin: 4px 0; }
+#diagnostics button { border: 0; background: transparent; padding: 2px 0; color: #9a3412; text-align: left; }
+.muted { color: #94a3b8; }
+@media (max-width: 850px) {
+  #app { height: auto; min-height: 100vh; padding: 0 12px 12px; }
+  main { grid-template-columns: 1fr; }
+  .pane { height: 480px; }
+  header { flex-wrap: wrap; }
+  .example-control { width: 100%; }
+  select { flex: 1; }
+}

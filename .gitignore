@@ -1,0 +1,6 @@
+/build/
+/.tools/
+/viewer/node_modules/
+/viewer/dist/
+/viewer/test-results/
+*.user
