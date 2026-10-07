@@ -3,6 +3,26 @@
 namespace lab
 {
     std::string get_next_id(const Graph &g) { return "n" + std::to_string(g.nodes.size()); }
+    void handle_lc(Graph &g, GraphNode &g_cond, std::vector<LoopControl> &lcs, std::vector<std::string> &out)
+    {
+        for (const auto &lc : lcs)
+        {
+            if (lc.kind == "continue_statement")
+            {
+                for (auto &from : lc.from)
+                {
+                    g.edges.push_back(GraphEdge{from, g_cond.id, "continue"});
+                }
+            }
+            else if (lc.kind == "break_statement")
+            {
+                for (const auto &from : lc.from)
+                {
+                    out.push_back(from);
+                }
+            }
+        }
+    }
 
     GraphNode create_simple_node(Graph &g, const SyntaxNode &node, const std::vector<std::string> &parent, const std::string id)
     {
@@ -23,7 +43,7 @@ namespace lab
         g.nodes.push_back({"start", "Start", "Start", SourceRange{0, 0}});
         g.nodes.push_back({"end", "End", "End", SourceRange{0, 0}});
 
-        std::function<std::vector<std::string>(SyntaxNode, std::vector<std::string>, unsigned)> visit = [&](SyntaxNode n, std::vector<std::string> p, unsigned depth)
+        std::function<NodeResult(SyntaxNode, NodeResult, unsigned)> visit = [&](SyntaxNode n, NodeResult p, unsigned depth)
         {
             // auto id = "n" + std::to_string(g.nodes.size());
             auto id = get_next_id(g);
@@ -32,51 +52,63 @@ namespace lab
 
             if (n.kind() == "local_declaration_statement" || n.kind() == "expression_statement")
             {
-                create_simple_node(g, n, p, id);
-                return std::vector{id};
+                create_simple_node(g, n, p.outs, id);
+                return NodeResult{std::vector{id}, {}};
             }
             else if (n.kind() == "return_statement")
             {
-                GraphNode node = create_simple_node(g, n, p, id);
+                GraphNode node = create_simple_node(g, n, p.outs, id);
                 g.edges.push_back({node.id, "end", "return"});
                 std::vector<std::string> out;
-                return out;
+                return NodeResult{out, {}};
             }
             else if (n.kind() == "if_statement")
             {
                 SyntaxNode condition_node = n.field("condition");
-                GraphNode g_cond = create_simple_node(g, condition_node, p, id);
+                GraphNode g_cond = create_simple_node(g, condition_node, p.outs, id);
                 SyntaxNode consequence_node = n.field("consequence");
                 SyntaxNode alternative_node = n.field("alternative");
                 // g.edges.push_back(GraphEdge{g_cond.id, visit(consequence_node, id, depth + 1), "true"});
                 // g.edges.push_back(GraphEdge{g_cond.id, visit(alternative_node, id, depth + 1), "false"});
-                std::vector<std::string> cons_node_id = visit(consequence_node, std::vector{id}, depth + 1);
-                std::vector<std::string> alt_node_id = visit(alternative_node, std::vector{id}, depth + 1);
+                NodeResult cons_node_id = visit(consequence_node, NodeResult{std::vector{id}, {}}, depth + 1);
+                NodeResult alt_node_id = visit(alternative_node, NodeResult{std::vector{id}, {}}, depth + 1);
                 // cfg.diagnostics.push_back(Diagnostic{"cons_node_id: ",cons_node_id,n.range()});
-                std::vector<std::string> out;
-                for (auto &s : cons_node_id)
+                NodeResult nr;
+                for (auto &s : cons_node_id.outs)
                 {
-                    out.push_back(s);
+                    nr.outs.push_back(s);
                 }
-                for (auto &s : alt_node_id)
+                for (auto &s : alt_node_id.outs)
                 {
-                    out.push_back(s);
+                    nr.outs.push_back(s);
                 }
-                return out;
+                for (auto &n : cons_node_id.lc)
+                {
+                    nr.lc.push_back(n);
+                }
+                for (auto &n : alt_node_id.lc)
+                {
+                    nr.lc.push_back(n);
+                }
+                return nr;
             }
             else if (n.kind() == "while_statement")
             {
                 SyntaxNode condition_node = n.field("condition");
-                GraphNode g_cond = create_simple_node(g, condition_node, p, id);
+                GraphNode g_cond = create_simple_node(g, condition_node, p.outs, id);
                 SyntaxNode body_node = n.field("body");
                 // std::vector<std::string> cond_node_id = visit(condition_node, std::vector{id}, depth + 1);
-                std::vector<std::string> body_node_id = visit(body_node, std::vector{id}, depth + 1);
-                for (const auto &b : body_node_id)
+                NodeResult body_node_id = visit(body_node, NodeResult{std::vector{id}, {}}, depth + 1);
+                for (const auto &b : body_node_id.outs)
                 {
                     g.edges.push_back(GraphEdge{b, id, "loop"}); // TODO: do every node, not just [0]
                 }
                 // g.edges.push_back(GraphEdge{body_node_id[0], id, "loop"}); // TODO: do every node, not just [0]
                 std::vector<std::string> out;
+                // if (!body_node_id.lc.empty())
+                //     cfg.diagnostics.push_back(Diagnostic{"Non empty LC", "", n.range()});
+                handle_lc(g, g_cond, body_node_id.lc, out);
+       
                 // for (auto &s : cond_node_id)
                 // {
                 //     out.push_back(s);
@@ -86,23 +118,24 @@ namespace lab
                 //     out.push_back(s);
                 // }
                 out.push_back(g_cond.id);
-                return out;
+                return NodeResult{out, {}}; // All loop conditions should be handled there
             }
             else if (n.kind() == "for_statement")
             {
                 SyntaxNode init_node = n.field("initializer");
-                GraphNode g_init = create_simple_node(g, init_node, p, id);
+                GraphNode g_init = create_simple_node(g, init_node, p.outs, id);
                 SyntaxNode condition_node = n.field("condition");
                 GraphNode g_cond = create_simple_node(g, condition_node, {g_init.id}, get_next_id(g));
 
                 SyntaxNode body_node = n.field("body");
-                std::vector<std::string> body_node_id = visit(body_node, std::vector{g_cond.id}, depth + 1);
+                NodeResult body_node_id = visit(body_node, NodeResult{std::vector{g_cond.id}, {}}, depth + 1);
                 SyntaxNode update_node = n.field("update");
- 
-                
-                GraphNode g_update = create_simple_node(g, update_node, body_node_id, get_next_id(g));
-                g.edges.push_back(GraphEdge{g_update.id, g_cond.id, "loop"});
 
+                GraphNode g_update = create_simple_node(g, update_node, body_node_id.outs, get_next_id(g));
+                g.edges.push_back(GraphEdge{g_update.id, g_cond.id, "loop"});
+                std::vector<std::string> out = {g_cond.id};
+
+                handle_lc(g, g_cond, body_node_id.lc, out);
                 // for (const auto &b : body_node_id)// Create an update block for every branch
                 // {
 
@@ -110,21 +143,49 @@ namespace lab
                 //     g.edges.push_back(GraphEdge{g_update.id, g_cond.id, "loop"});
                 // }
 
-                return std::vector<std::string>{g_cond.id};
+                return NodeResult{out, {}};
+            }
+            else if (n.kind() == "do_statement")
+            {
+                SyntaxNode condition_node = n.field("condition");
+                SyntaxNode body_node = n.field("body");
+                NodeResult body_node_id = visit(body_node, p, depth + 1);
+                GraphNode g_cond = create_simple_node(g, condition_node, body_node_id.outs, get_next_id(g));
+                std::vector<std::string> out = {g_cond.id};
+                handle_lc(g, g_cond, body_node_id.lc, out);
+
+                g.edges.push_back(GraphEdge{g_cond.id, id, "loop"}); // TODO: might cause issues (assuming id is given to the first body node)
+                // for (const auto &b : body_node_id)
+                // {
+                //     g.edges.push_back(GraphEdge{b, id, "loop"}); // TODO: do every node, not just [0]
+                // }
+                return NodeResult{out, {}};
+            }
+            else if (n.kind() == "continue_statement" || n.kind() == "break_statement")
+            {
+                // create an edge from the parent to the loop condition
+                // g.edges.push_back(GraphEdge{p.outs[0], "end", "continue"});
+                return NodeResult{std::vector<std::string>{}, {LoopControl{std::string(n.kind()), p.outs}}}; // Do not return a parent
             }
             else // Non terminal nodes
             {
-                std::vector<std::string> prev_id = p;
+                NodeResult prev_id = p;
+                std::vector<LoopControl> lcs;
+                std::vector<std::string> outs;
                 for (SyntaxNode &child : n.children())
                 {
-                    prev_id = visit(child, prev_id, depth + 1);
+                    prev_id = visit(child, NodeResult{prev_id.outs, {}}, depth + 1);
+                    for (const auto &lc : prev_id.lc)
+                    {
+                        lcs.push_back(lc);
+                    }
                 }
-                return prev_id;
+                return NodeResult{prev_id.outs, lcs};
             }
 
             return p;
         };
-        visit(method.root(), {"start"}, 0);
+        visit(method.root(), NodeResult{{"start"}, {}}, 0);
         return cfg;
     }
 

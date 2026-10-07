@@ -1,4 +1,5 @@
 #pragma once
+#include <vector>
 #include "lab/graph.hpp"
 
 namespace lab
@@ -26,6 +27,16 @@ namespace lab
         const GraphNode phi;
         GraphNode end;
         IfState state;
+    };
+    struct LoopControl{
+        std::string kind;
+        std::vector<std::string> from;
+    };
+
+    struct NodeResult{
+        std::vector<std::string> outs;
+        std::vector<LoopControl> lc;
+
     };
     // Precondition: method comes from a ParseResult with ok() == true.
     // Success: graph has a value and diagnostics is empty.
