@@ -2,6 +2,7 @@
 #include "lab/cfg.hpp"
 namespace lab
 {
+    static std::string last_case_value_name="";
     std::string get_next_id(const Graph &g) { return "n" + std::to_string(g.nodes.size()); }
     void handle_lc(Graph &g, GraphNode &g_cond, std::vector<LoopControl> &lcs, std::vector<std::string> &out)
     {
@@ -108,7 +109,7 @@ namespace lab
                 // if (!body_node_id.lc.empty())
                 //     cfg.diagnostics.push_back(Diagnostic{"Non empty LC", "", n.range()});
                 handle_lc(g, g_cond, body_node_id.lc, out);
-       
+
                 // for (auto &s : cond_node_id)
                 // {
                 //     out.push_back(s);
@@ -166,6 +167,69 @@ namespace lab
                 // create an edge from the parent to the loop condition
                 // g.edges.push_back(GraphEdge{p.outs[0], "end", "continue"});
                 return NodeResult{std::vector<std::string>{}, {LoopControl{std::string(n.kind()), p.outs}}}; // Do not return a parent
+            }
+            else if (n.kind() == "switch_statement")
+            {
+                SyntaxNode value = n.field("value");
+                last_case_value_name = value.text();
+                NodeResult out;
+                SyntaxNode body = n.field("body");
+                NodeResult nr = p;
+                for (const auto &child : body.children())
+                {
+                    nr = visit(child, nr, depth + 1);
+                    for (const auto &lc : nr.lc)
+                    {
+                        for (const auto &f : lc.from)
+                        {
+                            out.outs.push_back(f);
+                        }
+                    }
+                }
+                return out; // eat break statements
+            }
+            else if (n.kind() == "switch_section")
+            {
+                std::string constant_pattern = "";
+                // Check if one of the children is constant_pattern
+                for (const auto &child : n.children())
+                {
+                    if (child.kind() == "constant_pattern")
+                    {
+                        constant_pattern = child.text();
+                        break;
+                    }
+                }
+                NodeResult nr;
+                // std::string value = "val"; // TODO: find parent in graph, get its value. We ACTUALLY DONT know its id by p.outs[0]
+                std::string value = last_case_value_name;// TODO: this WILL break
+                if (constant_pattern != "")
+                { // regular branch
+                    std::string cond_id = get_next_id(g);
+                    g.nodes.push_back(GraphNode{cond_id, "binary_expression", value + "==" + constant_pattern, n.range()});
+                    for (const auto &pr : p.outs)
+                    {
+                        g.edges.push_back(GraphEdge{pr, cond_id, ""});
+                    }
+                    // g.edges.push_back(GraphEdge{p.outs[0], cond_id, ""});
+                    nr = {{cond_id}, {}};
+                    for (const auto &child : n.children())
+                    {
+                        nr = visit(child, nr, depth + 1);
+                    }
+                    nr.outs.push_back(cond_id);
+                }
+                else
+                { // default branch
+                    nr = p;
+                    for (const auto &child : n.children())
+                    {
+                        nr = visit(child, nr, depth + 1);
+                    }
+                }
+                return nr;
+                // return NodeResult{nr.outs, {}};
+                // eat break node if present, make the necessary adjustment (add break to outs)
             }
             else // Non terminal nodes
             {
