@@ -1,0 +1,16 @@
+digraph "CFG" {
+  graph [rankdir=TB, bgcolor="transparent", nodesep=0.25, ranksep=0.45];
+  node [shape=box, style="rounded,filled", fillcolor="#eef2ff", color="#818cf8", fontname="Arial", fontsize=11];
+  edge [color="#64748b", fontname="Arial", fontsize=10];
+  "start" [id="start", label="Start"];
+  "end" [id="end", label="End"];
+  "n2" [id="n2", label="int y = x + 2;"];
+  "n3" [id="n3", label="y = y * 3;"];
+  "n4" [id="n4", label="int z = y - x;"];
+  "n5" [id="n5", label="return z;"];
+  "start" -> "n2" [label=""];
+  "n2" -> "n3" [label=""];
+  "n3" -> "n4" [label=""];
+  "n4" -> "n5" [label=""];
+  "n5" -> "end" [label="return"];
+}

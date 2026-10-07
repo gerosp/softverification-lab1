@@ -1,5 +1,6 @@
 #include "lab/protocol.hpp"
 #include "lab/cfg.hpp"
+#include "lab/SSA.hpp"
 namespace lab {
 nlohmann::json error_response(nlohmann::json id, std::string code, std::string message) {
     return {{"protocolVersion", 1}, {"requestId", std::move(id)}, {"status", "error"},
@@ -7,8 +8,8 @@ nlohmann::json error_response(nlohmann::json id, std::string code, std::string m
         {"dot", nullptr}, {"nodeRanges", nlohmann::json::object()}};
 }
 nlohmann::json analyze_response(std::string source, nlohmann::json id, bool include_tree, std::string_view view) {
-    if (view != "syntax" && view != "cfg")
-        return error_response(id, "unsupported_view", "Supported views: 'syntax' (AST), 'cfg'.");
+    if (view != "syntax" && view != "cfg" && view != "ssa")
+        return error_response(id, "unsupported_view", "Supported views: 'syntax' (AST), 'cfg', 'ssa'.");
     auto result = parse_method(std::move(source));
     nlohmann::json out = {{"protocolVersion", 1}, {"requestId", std::move(id)}, {"status", result.ok() ? "ok" : "syntax_error"},
         {"diagnostics", nlohmann::json::array()}, {"dot", nullptr}, {"nodeRanges", nlohmann::json::object()}};
@@ -18,7 +19,7 @@ nlohmann::json analyze_response(std::string source, nlohmann::json id, bool incl
     std::optional<Graph> graph;
     if (view == "syntax" && result.method) {
         graph = syntax_graph(*result.method);
-    } else if (view == "cfg" && result.ok()) {
+    } else if ((view == "cfg" || view == "ssa") && result.ok()) {
         auto cfg = build_cfg(*result.method);
         if (!cfg.diagnostics.empty() || !cfg.graph) {
             out["status"] = "error";
@@ -31,9 +32,23 @@ nlohmann::json analyze_response(std::string source, nlohmann::json id, bool incl
             graph = std::move(cfg.graph);
         }
     }
-    // Invalid syntax may be displayed as a partial AST, but never passed to CFG.
+    if (view == "ssa" && graph) {
+        auto ssa = build_ssa(*result.method, *graph);
+        graph.reset();
+        if (!ssa.diagnostics.empty() || !ssa.graph) {
+            out["status"] = "error";
+            for (const auto& d : ssa.diagnostics)
+                out["diagnostics"].push_back({{"code", d.code}, {"message", d.message}, {"range", {{"start", d.range.start}, {"end", d.range.end}}}});
+            if (ssa.diagnostics.empty())
+                out["diagnostics"].push_back({{"code", "ssa_no_graph"}, {"message", "SSA pass returned neither a graph nor diagnostics."},
+                    {"range", {{"start", 0}, {"end", 0}}}});
+        } else {
+            graph = std::move(ssa.graph);
+        }
+    }
+    // Invalid syntax may be displayed as a partial AST, but never passed to CFG/SSA.
     if (graph) {
-        out["dot"] = to_dot(*graph, view == "cfg" ? "CFG" : "Syntax");
+        out["dot"] = to_dot(*graph, view == "cfg" ? "CFG" : view == "ssa" ? "SSA" : "Syntax");
         for (const auto& n : graph->nodes)
             if (n.range) out["nodeRanges"][n.id] = {{"start", n.range->start}, {"end", n.range->end}};
     }

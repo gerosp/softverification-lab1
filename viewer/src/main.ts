@@ -2,7 +2,9 @@ import * as monaco from 'monaco-editor/editor/editor.api.js';
 import 'monaco-editor/languages/definitions/csharp/register.js';
 import EditorWorker from 'monaco-editor/editor/editor.worker.js?worker';
 import { byteToUtf16 } from './positions';
-import type { AnalysisResponse, AnalysisView, SourceRange } from './types';
+import { graphView } from './graph-view';
+import { examplePicker } from './examples';
+import type { AnalysisResponse, AnalysisView, Example, SourceRange } from './types';
 import './style.css';
 
 (globalThis as typeof globalThis & { MonacoEnvironment: object }).MonacoEnvironment = { getWorker: () => new EditorWorker() };
@@ -10,10 +12,7 @@ document.querySelector<HTMLDivElement>('#app')!.innerHTML = `
   <header>
     <div class="brand"><span class="logo">C#</span><div><h1>Syntax Lab</h1><p>Исследуйте структуру метода</p></div></div>
     <div class="header-controls">
-      <div class="view-control"><label for="view">Модель</label><select id="view" aria-label="Модель">
-        <option value="syntax">AST</option><option value="cfg">CFG</option>
-      </select></div>
-      <div class="example-control"><label for="examples">Пример</label><select id="examples" aria-label="Пример"></select></div>
+      <div class="example-control"><span>Пример</span><button id="examples" aria-label="Выбрать пример" aria-haspopup="dialog" aria-controls="example-picker" aria-expanded="false">Загрузка примеров…</button></div>
     </div>
   </header>
   <main>
@@ -23,18 +22,30 @@ document.querySelector<HTMLDivElement>('#app')!.innerHTML = `
       <div class="hint">Сигнатура и тело одного метода · изменения применяются автоматически</div>
     </section>
     <section id="graph-pane" class="pane graph-pane" aria-label="Синтаксическое дерево">
-      <div class="pane-header"><h2 id="graph-title">Синтаксическое дерево</h2><div class="tools">
+      <div class="pane-header graph-header"><div id="view" class="segmented" role="group" aria-label="Модель графа">
+        <button data-view="cfg" aria-pressed="false" title="Граф потока управления">CFG</button>
+        <button data-view="syntax" aria-pressed="true" title="Синтаксическое дерево">AST</button>
+        <button data-view="ssa" aria-pressed="false" title="Статическая форма однократного присваивания">SSA</button>
+      </div><div class="tools">
+        <button id="refresh" title="Повторить анализ текущего кода" aria-label="Обновить граф">↻</button>
         <button id="zoom-out" title="Уменьшить" aria-label="Уменьшить">−</button>
         <button id="fit" title="Вписать">Вписать</button>
         <button id="zoom-in" title="Увеличить" aria-label="Увеличить">+</button>
         <span class="separator"></span><button id="dot" disabled>DOT ↓</button><button id="svg" disabled>SVG ↓</button>
+        <button id="fullscreen" title="На весь экран" aria-label="На весь экран" aria-pressed="false">⛶</button>
       </div></div>
       <div id="status" role="status" data-state="pending">Загрузка…</div>
       <div id="viewport"><div id="graph"><p class="placeholder">Дерево появится после разбора метода</p></div></div>
-      <div class="hint">Нажмите на узел, чтобы выделить соответствующий код</div>
+      <div class="hint">Колесо — масштаб · перетаскивание — перемещение · нажатие на узел — код</div>
     </section>
   </main>
-  <footer><h2>Диагностика <span id="error-count">0</span></h2><ul id="diagnostics"><li class="muted">Ошибок нет</li></ul></footer>`;
+  <footer><h2>Диагностика <span id="error-count">0</span></h2><ul id="diagnostics"><li class="muted">Ошибок нет</li></ul></footer>
+  <dialog id="example-picker" aria-labelledby="examples-title">
+    <div class="picker-header"><h2 id="examples-title">Выбрать пример</h2><button id="close-examples" aria-label="Закрыть примеры">✕</button></div>
+    <label for="example-search">Поиск по названию, конструкции или коду</label>
+    <input id="example-search" type="search" placeholder="for, while, return, ранний выход…" autocomplete="off">
+    <p id="example-count" role="status"></p><div id="example-tree"></div>
+  </dialog>`;
 const element = <T extends HTMLElement>(id: string) => document.getElementById(id)! as T;
 const editor = monaco.editor.create(element('editor'), {
   language: 'csharp', value: '', theme: 'vs', automaticLayout: true,
@@ -45,7 +56,7 @@ const model = editor.getModel()!;
 const graph = element('graph');
 const viewport = element('viewport');
 const status = element('status');
-const viewSelect = element<HTMLSelectElement>('view');
+const navigation = graphView(viewport, graph);
 let selectedView: AnalysisView = 'syntax';
 let revision = 0;
 let timer: ReturnType<typeof setTimeout>;
@@ -55,9 +66,6 @@ let renderTimer: ReturnType<typeof setTimeout> | undefined;
 let latest: AnalysisResponse | undefined;
 let latestSource = '';
 let exportedSvg = '';
-let originalWidth = 1;
-let originalHeight = 1;
-let zoom = 1;
 
 function setStatus(text: string, state: string) { status.textContent = text; status.dataset.state = state; }
 function disableExport() {
@@ -102,14 +110,6 @@ function showDiagnostics(response: AnalysisResponse, source: string) {
   }
   if (!response.diagnostics.length) { const li = document.createElement('li'); li.className = 'muted'; li.textContent = 'Ошибок нет'; list.append(li); }
 }
-function applyZoom() {
-  const svg = graph.querySelector('svg');
-  if (svg) { svg.style.width = `${originalWidth * zoom}px`; svg.style.height = `${originalHeight * zoom}px`; }
-}
-function fit() {
-  zoom = Math.min(1, Math.max(0.02, Math.min((viewport.clientWidth - 40) / originalWidth, (viewport.clientHeight - 40) / originalHeight)));
-  applyZoom();
-}
 function render(response: AnalysisResponse) {
   if (!response.dot) {
     emptyGraph(selectedView === 'cfg' ? 'CFG доступен после исправления синтаксиса' : 'Нет дерева для отображения');
@@ -133,11 +133,8 @@ function render(response: AnalysisResponse) {
     const svg = documentSvg.documentElement;
     if (svg.localName !== 'svg') { fail('Некорректный SVG'); return; }
     graph.replaceChildren(document.importNode(svg, true));
-    const mounted = graph.querySelector('svg')!;
-    originalWidth = mounted.viewBox.baseVal.width;
-    originalHeight = mounted.viewBox.baseVal.height;
     graph.classList.remove('stale');
-    fit();
+    navigation.mount();
     element<HTMLButtonElement>('dot').disabled = false;
     element<HTMLButtonElement>('svg').disabled = false;
     // Synthetic CFG entry/exit nodes may have no source range, but still count.
@@ -164,7 +161,9 @@ async function analyze(requestId: number) {
     if (response.status === 'error') {
       const message = response.diagnostics.some(d => d.code === 'cfg_not_implemented')
         ? 'Построение CFG пока не реализовано'
-        : response.diagnostics[0]?.message ?? 'Ошибка анализатора';
+        : selectedView === 'ssa' && response.diagnostics.some(d => d.code === 'unsupported_view' || d.code === 'ssa_not_implemented')
+          ? 'Построение SSA пока не реализовано'
+          : response.diagnostics[0]?.message ?? 'Ошибка анализатора';
       emptyGraph(message); setStatus(message, 'error'); return;
     }
     setStatus('Построение изображения…', 'pending');
@@ -180,30 +179,60 @@ function schedule(delay = 300) {
   clearTimeout(timer); clearTimeout(renderTimer);
   graph.classList.add('stale'); disableExport();
   monaco.editor.setModelMarkers(model, 'lab', []);
-  setStatus(graph.querySelector('svg') ? 'Код изменён · показан устаревший граф' : 'Ожидание ввода…', 'pending');
+  setStatus(graph.querySelector('svg') ? 'Обновление · показан устаревший граф' : 'Ожидание анализа…', 'pending');
   const id = revision;
   timer = setTimeout(() => void analyze(id), delay);
 }
 editor.onDidChangeModelContent(() => schedule());
-viewSelect.onchange = () => {
-  selectedView = viewSelect.value as AnalysisView;
-  const title = selectedView === 'syntax' ? 'Синтаксическое дерево' : 'Граф потока управления';
-  element('graph-title').textContent = title;
+function changeView(view: AnalysisView) {
+  if (view === selectedView) return;
+  selectedView = view;
+  for (const button of document.querySelectorAll<HTMLButtonElement>('[data-view]')) {
+    button.setAttribute('aria-pressed', String(button.dataset.view === view));
+  }
+  const title = selectedView === 'syntax' ? 'Синтаксическое дерево' : selectedView === 'cfg' ? 'Граф потока управления' : 'Статическая форма однократного присваивания';
   element('graph-pane').setAttribute('aria-label', title);
   latest = undefined;
   emptyGraph('Загрузка выбранной модели…');
   element('diagnostics').replaceChildren(); element('error-count').textContent = '0';
   // Reuse the revision/abort pipeline so an old AST cannot overwrite a CFG view.
   schedule(0);
-};
+}
+for (const button of document.querySelectorAll<HTMLButtonElement>('[data-view]')) {
+  button.onclick = () => changeView(button.dataset.view as AnalysisView);
+}
 graph.addEventListener('click', event => {
   if (graph.classList.contains('stale')) return;
   const node = (event.target as Element).closest('g.node');
   if (node && latest?.nodeRanges[node.id]) selectRange(latest.nodeRanges[node.id]);
 });
-element('zoom-in').onclick = () => { zoom = Math.min(4, zoom * 1.3); applyZoom(); };
-element('zoom-out').onclick = () => { zoom = Math.max(0.02, zoom / 1.3); applyZoom(); };
-element('fit').onclick = fit;
+element('zoom-in').onclick = () => navigation.zoomAt(1.3);
+element('zoom-out').onclick = () => navigation.zoomAt(1 / 1.3);
+element('fit').onclick = navigation.fit;
+element('refresh').onclick = () => schedule(0);
+const graphPane = element('graph-pane');
+const fullscreen = element<HTMLButtonElement>('fullscreen');
+function updateFullscreen() {
+  const active = document.fullscreenElement === graphPane || graphPane.classList.contains('expanded');
+  fullscreen.setAttribute('aria-pressed', String(active));
+  fullscreen.title = active ? 'Выйти из полного экрана' : 'На весь экран';
+  fullscreen.setAttribute('aria-label', fullscreen.title);
+}
+fullscreen.onclick = async () => {
+  if (document.fullscreenElement === graphPane) await document.exitFullscreen();
+  else if (graphPane.classList.contains('expanded')) graphPane.classList.remove('expanded');
+  else {
+    try { await graphPane.requestFullscreen(); }
+    catch { graphPane.classList.add('expanded'); }
+  }
+  updateFullscreen();
+};
+document.addEventListener('fullscreenchange', updateFullscreen);
+document.addEventListener('keydown', event => {
+  if (event.key === 'Escape' && graphPane.classList.contains('expanded')) {
+    graphPane.classList.remove('expanded'); updateFullscreen(); fullscreen.focus();
+  }
+});
 function download(name: string, text: string, type: string) {
   const url = URL.createObjectURL(new Blob([text], { type }));
   const link = document.createElement('a'); link.href = url; link.download = name; link.click();
@@ -214,11 +243,11 @@ element('svg').onclick = () => download(`${selectedView}.svg`, exportedSvg, 'ima
 async function init() {
   const response = await fetch('/api/examples');
   if (!response.ok) throw new Error('Не удалось загрузить примеры');
-  const examples: { name: string; source: string }[] = await response.json();
-  const select = element<HTMLSelectElement>('examples');
-  for (const example of examples) { const option = document.createElement('option'); option.value = example.name; option.textContent = example.name; select.append(option); }
-  select.onchange = () => { const example = examples.find(e => e.name === select.value); if (example) editor.setValue(example.source); };
-  if (examples[0]) editor.setValue(examples[0].source);
-  else schedule();
+  const examples: Example[] = await response.json();
+  examplePicker(examples, example => {
+    if (model.getValue() === example.source) schedule(0);
+    else editor.setValue(example.source);
+  });
+  if (!examples.length) schedule();
 }
 void init().catch(error => fail(String(error)));

@@ -14,9 +14,9 @@ test('examples, live editing, graph selection, zoom and exports', async ({ page 
   const errors = [];
   page.on('pageerror', error => errors.push(error.message));
   await page.goto('/'); await ready(page);
-  await expect(page.locator('#examples option')).toHaveCount(7);
-  await page.selectOption('#examples', '05-for.cs');
-  await expect(page.locator('#graph')).toHaveClass(/stale/);
+  await page.getByRole('button', { name: 'Выбрать пример', exact: true }).click();
+  await expect(page.locator('[data-example-id]')).toHaveCount(57);
+  await page.locator('[data-example-id="05-for.cs"]').click();
   await ready(page);
   await expect(page.locator('#graph g.node text').filter({ hasText: /^for_statement$/ })).toHaveCount(1);
   await page.screenshot({ path: 'test-results/viewer.png', fullPage: true });
@@ -78,16 +78,18 @@ test('backend failure marks the previous graph stale and disables export', async
 test('switching AST/CFG reaches the pass without displaying AST as CFG', async ({ page }) => {
   await page.goto('/'); await ready(page);
   const cfgRequest = page.waitForRequest(req => req.url().endsWith('/api/analyze') && req.postDataJSON()?.view === 'cfg');
-  await page.selectOption('#view', 'cfg');
+  await page.getByRole('button', { name: 'CFG', exact: true }).click();
   await cfgRequest;
-  await expect(page.locator('#graph-title')).toHaveText('Граф потока управления');
-  await expect(page.locator('#status')).toContainText('Построение CFG пока не реализовано');
-  await expect(page.locator('#graph svg')).toHaveCount(0);
-  await expect(page.getByRole('button', { name: 'DOT ↓' })).toBeDisabled();
+  await ready(page);
+  await expect(page.locator('#graph-pane')).toHaveAttribute('aria-label', 'Граф потока управления');
+  await expect(page.getByRole('button', { name: 'CFG', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.locator('#graph')).toContainText('return z;');
+  await expect(page.locator('#graph')).not.toContainText('method_declaration');
+  await expect(page.getByRole('button', { name: 'DOT ↓' })).toBeEnabled();
   await replaceSource(page, 'int F() { return 1 }');
   await expect(page.locator('#diagnostics')).toContainText('Expected ;');
   await expect(page.locator('#graph svg')).toHaveCount(0);
-  await page.selectOption('#view', 'syntax');
+  await page.getByRole('button', { name: 'AST', exact: true }).click();
   await expect(page.locator('#status')).toContainText('Частичное дерево');
   await expect(page.locator('#graph svg')).toBeVisible();
   await replaceSource(page, 'int F() { return 1; }'); await ready(page);
@@ -95,20 +97,9 @@ test('switching AST/CFG reaches the pass without displaying AST as CFG', async (
 
 test('a CFG response uses shared rendering, source selection and CFG export names', async ({ page }) => {
   await page.goto('/'); await ready(page);
-  // Test-only fixture: exercise the success path before the user implements CFG.
-  await page.route('**/api/analyze', async route => {
-    const body = route.request().postDataJSON();
-    if (body.view !== 'cfg') return route.continue();
-    const start = Buffer.byteLength(body.source.slice(0, body.source.indexOf('return')), 'utf8');
-    await route.fulfill({ contentType: 'application/json', body: JSON.stringify({
-      protocolVersion: 1, requestId: body.requestId, status: 'ok', diagnostics: [],
-      dot: 'digraph "CFG" { entry [id="entry", label="Entry"]; b0 [id="b0", label="return z;"]; exit [id="exit", label="Exit"]; entry -> b0; b0 -> exit; }',
-      nodeRanges: { b0: { start, end: start + 9 } },
-    }) });
-  });
-  await page.selectOption('#view', 'cfg'); await ready(page);
-  await expect(page.locator('#status')).toContainText('3 узлов');
-  await page.locator('#graph #b0').click();
+  await page.getByRole('button', { name: 'CFG', exact: true }).click(); await ready(page);
+  await expect(page.locator('#status')).toContainText('6 узлов');
+  await page.locator('#graph g.node').filter({ hasText: 'return z;' }).click();
   await expect(page.locator('.monaco-editor .selected-text').first()).toBeVisible();
   const dotDownload = page.waitForEvent('download');
   await page.getByRole('button', { name: 'DOT ↓' }).click();
@@ -132,9 +123,98 @@ test('late AST responses cannot overwrite the selected CFG view', async ({ page 
     await route.fulfill({ response }).catch(() => {});
   });
   await replaceSource(page, 'int OldAst() { return 1; }'); await seen;
-  await page.selectOption('#view', 'cfg');
-  await expect(page.locator('#status')).toContainText('Построение CFG пока не реализовано');
+  await page.getByRole('button', { name: 'CFG', exact: true }).click();
+  await ready(page);
   await page.waitForTimeout(1500);
-  await expect(page.locator('#graph svg')).toHaveCount(0);
+  await expect(page.locator('#graph svg')).toBeVisible();
+  await expect(page.locator('#graph')).toContainText('return 1;');
   await expect(page.locator('#graph')).not.toContainText('OldAst');
+});
+
+test('category picker searches all examples and distinguishes duplicate filenames', async ({ page }) => {
+  await page.goto('/'); await ready(page);
+  const trigger = page.getByRole('button', { name: 'Выбрать пример', exact: true });
+  await trigger.click();
+  await expect(page.locator('#example-count')).toHaveText('57 из 57');
+  await expect(page.locator('.original-examples [data-example-id]')).toHaveCount(7);
+  await page.locator('#example-search').fill('01-sequence');
+  await expect(page.locator('[data-example-id]')).toHaveCount(2);
+  await page.locator('[data-example-id="expanded/01-sequence.cs"]').click();
+  await ready(page);
+  await expect(page.locator('#graph')).toContainText('AddOffset');
+  await trigger.click();
+  await page.locator('[data-example-id="01-sequence.cs"]').click();
+  await ready(page);
+  await expect(page.locator('#graph')).toContainText('Compute');
+  await trigger.click();
+  await page.locator('#example-search').fill('несуществующий пример');
+  await expect(page.locator('#example-count')).toHaveText('0 из 57');
+  await expect(page.locator('#example-tree')).toContainText('Примеры не найдены');
+  await page.locator('#example-search').fill('continue');
+  await expect(page.locator('[data-example-id="expanded/30-for-continue.cs"]')).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(page.locator('#example-picker')).not.toBeVisible();
+  await expect(trigger).toBeFocused();
+});
+
+test('wheel zoom anchors at the cursor, dragging pans without selecting, and fit resets', async ({ page }) => {
+  await page.goto('/'); await ready(page);
+  await page.getByRole('button', { name: 'CFG', exact: true }).click(); await ready(page);
+  const svg = page.locator('#graph svg');
+  const before = await svg.boundingBox();
+  const box = await page.locator('#viewport').boundingBox();
+  const anchor = { x: box.x + box.width * 0.6, y: box.y + box.height * 0.4 };
+  await page.mouse.move(anchor.x, anchor.y);
+  await page.mouse.wheel(0, -200);
+  await expect.poll(async () => (await svg.boundingBox()).width).toBeGreaterThan(before.width);
+  const after = await svg.boundingBox();
+  expect((anchor.x - after.x) / after.width).toBeCloseTo((anchor.x - before.x) / before.width, 2);
+  expect((anchor.y - after.y) / after.height).toBeCloseTo((anchor.y - before.y) / before.height, 2);
+  await page.getByRole('button', { name: 'Вписать', exact: true }).click();
+  const fitted = await svg.boundingBox();
+  const node = await page.locator('#graph g.node').filter({ hasText: 'return z;' }).boundingBox();
+  await page.mouse.move(node.x + node.width / 2, node.y + node.height / 2);
+  await page.mouse.down(); await page.mouse.move(node.x + node.width / 2 + 65, node.y + node.height / 2 - 45, { steps: 8 }); await page.mouse.up();
+  const moved = await svg.boundingBox();
+  expect(moved.x - fitted.x).toBeCloseTo(65, 0);
+  expect(moved.y - fitted.y).toBeCloseTo(-45, 0);
+  await expect(page.locator('.monaco-editor .selected-text')).toHaveCount(0);
+  await page.getByRole('button', { name: 'Вписать', exact: true }).click();
+  expect((await svg.boundingBox()).x).toBeCloseTo(fitted.x, 0);
+  await page.locator('#graph g.node').filter({ hasText: 'return z;' }).click();
+  await expect(page.locator('.monaco-editor .selected-text').first()).toBeVisible();
+});
+
+test('fullscreen expands the graph and exits, including the browser fallback', async ({ page }) => {
+  await page.goto('/'); await ready(page);
+  await page.getByRole('button', { name: 'На весь экран', exact: true }).click();
+  await expect(page.locator('#fullscreen')).toHaveAttribute('aria-pressed', 'true');
+  await expect.poll(async () => (await page.locator('#graph-pane').boundingBox()).width).toBe(1440);
+  await page.getByRole('button', { name: 'Выйти из полного экрана' }).click();
+  await expect(page.locator('#fullscreen')).toHaveAttribute('aria-pressed', 'false');
+  await page.evaluate(() => { document.getElementById('graph-pane').requestFullscreen = () => Promise.reject(new Error('Unavailable')); });
+  await page.getByRole('button', { name: 'На весь экран', exact: true }).click();
+  await expect(page.locator('#graph-pane')).toHaveClass(/expanded/);
+  await page.keyboard.press('Escape');
+  await expect(page.locator('#graph-pane')).not.toHaveClass(/expanded/);
+  await expect(page.locator('#fullscreen')).toHaveAttribute('aria-pressed', 'false');
+});
+
+test('refresh retries unchanged source after backend failure and SSA reports its scaffold', async ({ page }) => {
+  await page.goto('/'); await ready(page);
+  await page.getByRole('button', { name: 'CFG', exact: true }).click(); await ready(page);
+  await page.route('**/api/analyze', route => route.fulfill({ status: 502, contentType: 'application/json', body: JSON.stringify({ error: 'Analyzer unavailable' }) }));
+  await page.getByRole('button', { name: 'Обновить граф' }).click();
+  await expect(page.locator('#status')).toContainText('Analyzer unavailable');
+  await expect(page.locator('#dot')).toBeDisabled();
+  await page.unroute('**/api/analyze');
+  const refreshed = page.waitForRequest(req => req.url().endsWith('/api/analyze') && req.postDataJSON()?.view === 'cfg');
+  await page.getByRole('button', { name: 'Обновить граф' }).click();
+  expect((await refreshed).postDataJSON().source).toContain('int Compute');
+  await ready(page);
+  await page.getByRole('button', { name: 'SSA', exact: true }).click();
+  await expect(page.locator('#status')).toContainText('Построение SSA пока не реализовано');
+  await expect(page.locator('#graph svg')).toHaveCount(0);
+  await expect(page.locator('#dot')).toBeDisabled();
+  await page.getByRole('button', { name: 'AST', exact: true }).click(); await ready(page);
 });

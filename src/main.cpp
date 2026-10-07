@@ -32,7 +32,7 @@ int main(int argc, char** argv) {
             return lab::response_exit_code(response);
         }
         if (argc == 2 && std::string_view(argv[1]) == "--help") {
-            std::cout << "lab-model parse --input <file|-> --format <json|dot|sexp> [--view syntax|cfg]\n"
+            std::cout << "lab-model parse --input <file|-> --format <json|dot|sexp> [--view syntax|cfg|ssa]\n"
                          "  Default view: syntax (AST). sexp is only available for syntax.\nlab-model --request-json\n";
             return 0;
         }
@@ -48,8 +48,8 @@ int main(int argc, char** argv) {
         }
         if (input.empty()) throw std::runtime_error("--input is required.");
         if (format != "json" && format != "dot" && format != "sexp") throw std::runtime_error("Unknown format: " + format);
-        if (view != "syntax" && view != "cfg") throw std::runtime_error("Unknown view: " + view);
-        if (view == "cfg" && format == "sexp") throw std::runtime_error("sexp is only available for view 'syntax'; use json or dot for CFG.");
+        if (view != "syntax" && view != "cfg" && view != "ssa") throw std::runtime_error("Unknown view: " + view);
+        if (view != "syntax" && format == "sexp") throw std::runtime_error("sexp is only available for view 'syntax'; use json or dot for CFG/SSA.");
         std::string source;
         if (input == "-") source = read_all(std::cin, lab::max_source_bytes);
         else {

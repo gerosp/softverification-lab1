@@ -9,14 +9,11 @@ h1 { margin: 0; font-size: 21px; font-weight: 650; letter-spacing: -.5px; }
 .brand p { margin: 3px 0 0; font-size: 12px; color: #64748b; }
 .example-control { display: flex; align-items: center; gap: 12px; font-size: 12px; color: #64748b; }
 .header-controls { display: flex; align-items: center; gap: 20px; flex-wrap: wrap; }
-.view-control { display: flex; align-items: center; gap: 12px; font-size: 12px; color: #64748b; }
-#view { min-width: 90px; }
-select, button { font: inherit; color: #334155; border: 1px solid #dbe1ed; background: white; border-radius: 7px; }
-select { padding: 9px 12px; min-width: 230px; }
+input, button { font: inherit; color: #334155; border: 1px solid #dbe1ed; background: white; border-radius: 7px; }
 button { cursor: pointer; padding: 6px 10px; font-size: 12px; }
 button:hover:not(:disabled) { background: #eef2ff; border-color: #a5b4fc; }
 button:disabled { opacity: .4; cursor: default; }
-button:focus-visible, select:focus-visible { outline: 2px solid #6366f1; outline-offset: 2px; }
+button:focus-visible, input:focus-visible, summary:focus-visible { outline: 2px solid #6366f1; outline-offset: 2px; }
 main { display: grid; grid-template-columns: minmax(320px, .9fr) minmax(420px, 1.2fr); flex: 1; min-height: 280px; gap: 16px; }
 .pane { border: 1px solid #dfe4ef; background: white; border-radius: 12px; overflow: hidden; display: flex; flex-direction: column; min-width: 0; box-shadow: 0 2px 8px #1e293b04; }
 .pane-header { min-height: 51px; padding: 10px 16px; display: flex; align-items: center; justify-content: space-between; gap: 10px; border-bottom: 1px solid #edf0f6; }
@@ -24,18 +21,42 @@ h2 { font-size: 12px; margin: 0; font-weight: 650; }
 .badge { font-size: 9px; font-weight: 700; letter-spacing: 1px; color: #0f766e; background: #e6f6f1; padding: 4px 7px; border-radius: 5px; }
 #editor { flex: 1; min-height: 200px; }
 .hint { padding: 10px 16px; font-size: 11px; color: #7c879b; border-top: 1px solid #edf0f6; }
-.tools { display: flex; gap: 5px; align-items: center; }
+.tools { display: flex; gap: 5px; align-items: center; flex-wrap: wrap; }
+.graph-header { flex-wrap: wrap; }
+.segmented { display: flex; padding: 3px; gap: 2px; background: #f1f5f9; border-radius: 8px; }
+.segmented button { border-color: transparent; background: transparent; font-weight: 650; }
+.segmented button[aria-pressed="true"] { color: #4338ca; background: white; border-color: #dbe1ed; box-shadow: 0 1px 3px #1e293b14; }
 .separator { height: 16px; width: 1px; background: #e2e8f0; margin: 0 3px; }
 #status { padding: 9px 16px; font-size: 11px; background: #f8fafc; color: #64748b; border-bottom: 1px solid #edf0f6; }
 #status[data-state="ok"] { color: #047857; background: #f0fdf7; }
 #status[data-state="error"] { color: #9a3412; background: #fff7ed; }
-#viewport { flex: 1; min-height: 0; overflow: auto; background-image: radial-gradient(#dbe2ee .65px, transparent .65px); background-size: 16px 16px; }
-#graph { min-height: 100%; min-width: 100%; width: max-content; padding: 20px; display: grid; place-items: center; }
+#viewport { position: relative; flex: 1; min-height: 0; overflow: hidden; cursor: grab; touch-action: none; user-select: none; background-image: radial-gradient(#dbe2ee .65px, transparent .65px); background-size: 16px 16px; }
+#viewport.panning, #viewport.panning g.node { cursor: grabbing; }
+#graph { position: absolute; inset: 0; display: grid; place-items: center; }
 #graph.stale svg { opacity: .35; }
-#graph svg { display: block; }
+#graph svg { display: block; position: absolute; top: 0; left: 0; max-width: none; transform-origin: 0 0; }
 #graph g.node { cursor: pointer; }
 #graph g.node:hover polygon, #graph g.node:hover path { fill: #dbeafe; stroke: #4338ca; }
-.placeholder { font-size: 13px; color: #94a3b8; }
+.placeholder { font-size: 13px; color: #94a3b8; padding: 20px; }
+.graph-pane:fullscreen, .graph-pane.expanded { width: 100vw; height: 100dvh; border-radius: 0; background: white; }
+.graph-pane.expanded { position: fixed; inset: 0; z-index: 100; }
+#examples { max-width: min(520px, 70vw); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 9px 12px; text-align: left; }
+#example-picker { width: min(720px, calc(100vw - 32px)); max-height: 85dvh; padding: 22px; border: 1px solid #dbe1ed; border-radius: 14px; color: #334155; box-shadow: 0 20px 80px #0f172a33; }
+#example-picker::backdrop { background: #0f172a66; }
+.picker-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 18px; }
+.picker-header h2 { font-size: 18px; }
+#example-picker label { display: block; margin-bottom: 8px; font-size: 12px; }
+#example-search { width: 100%; padding: 10px 12px; }
+#example-count { font-size: 12px; color: #64748b; }
+#example-tree { max-height: 54dvh; overflow: auto; padding: 3px; }
+.example-category { margin: 4px 0; }
+.example-category summary { cursor: pointer; font-size: 13px; font-weight: 650; padding: 10px; border-radius: 7px; background: #f8fafc; }
+.example-category ul { list-style: none; margin: 5px 0 10px; padding-left: 18px; }
+.example-category li button { display: block; width: 100%; padding: 10px; text-align: left; border-color: transparent; }
+.example-category li button[aria-pressed="true"] { border-color: #a5b4fc; background: #eef2ff; }
+.example-category strong, .example-category li span { display: block; }
+.example-category li span { color: #64748b; line-height: 1.5; margin-top: 4px; }
+.original-examples { margin-top: 18px; padding-top: 14px; border-top: 1px solid #dbe1ed; }
 footer { min-height: 96px; max-height: 160px; flex-shrink: 0; overflow: auto; padding: 14px 17px; border: 1px solid #dfe4ef; background: white; border-radius: 12px; }
 #error-count { color: #64748b; font-weight: 400; margin-left: 5px; }
 #diagnostics { list-style: none; padding: 0; margin: 9px 0 0; font-size: 12px; }
@@ -48,5 +69,5 @@ footer { min-height: 96px; max-height: 160px; flex-shrink: 0; overflow: auto; pa
   .pane { height: 480px; }
   header { flex-wrap: wrap; }
   .example-control { width: 100%; }
-  select { flex: 1; }
+  #examples { flex: 1; }
 }

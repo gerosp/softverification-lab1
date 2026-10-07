@@ -10,6 +10,22 @@ const projectRoot = resolve(viewerRoot, '..');
 export const defaultAnalyzer = resolve(projectRoot, 'build', process.platform === 'win32' ? 'windows-debug/lab-model.exe' : 'linux-debug/lab-model');
 const examplesRoot = resolve(projectRoot, 'examples');
 
+async function readExamples() {
+  const catalog = JSON.parse(await readFile(resolve(examplesRoot, 'expanded/cases.json'), 'utf8'));
+  const expanded = await Promise.all(catalog.examples.map(async entry => ({
+    id: `expanded/${entry.file}`, name: entry.file, title: entry.title,
+    category: entry.group, description: entry.focus, method: entry.method, original: false,
+    source: await readFile(resolve(examplesRoot, 'expanded', entry.file), 'utf8'),
+  })));
+  const names = (await readdir(examplesRoot)).filter(name => /^\d\d-[\w-]+\.cs$/.test(name)).sort();
+  const original = await Promise.all(names.map(async name => ({
+    id: name, name, title: name.replace(/^\d+-|\.cs$/g, '').replaceAll('-', ' '),
+    category: 'Исходные примеры', description: 'Начальный набор лабораторной', original: true,
+    source: await readFile(resolve(examplesRoot, name), 'utf8'),
+  })));
+  return [...expanded, ...original];
+}
+
 function send(res, status, body) {
   if (res.destroyed) return;
   res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
@@ -32,8 +48,7 @@ export function createApp({ analyzer = defaultAnalyzer, timeoutMs = 5000, assets
     const pathname = new URL(req.url, 'http://localhost').pathname;
     try {
       if (pathname === '/api/examples' && req.method === 'GET') {
-        const names = (await readdir(examplesRoot)).filter(name => /^\d\d-[\w-]+\.cs$/.test(name)).sort();
-        return send(res, 200, await Promise.all(names.map(async name => ({ name, source: await readFile(resolve(examplesRoot, name), 'utf8') }))));
+        return send(res, 200, await readExamples());
       }
       if (pathname === '/api/analyze' && req.method === 'POST') {
         if (req.headers.origin && req.headers.origin !== `http://${req.headers.host}`)

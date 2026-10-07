@@ -135,7 +135,7 @@ namespace lab
                 g.edges.push_back(GraphEdge{g_update.id, g_cond.id, "loop"});
                 std::vector<std::string> out = {g_cond.id};
 
-                handle_lc(g, g_cond, body_node_id.lc, out);
+                handle_lc(g, g_update, body_node_id.lc, out);
                 // for (const auto &b : body_node_id)// Create an update block for every branch
                 // {
 

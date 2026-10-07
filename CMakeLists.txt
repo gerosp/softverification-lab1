@@ -7,7 +7,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 include(CTest)
 include(cmake/Dependencies.cmake)
 
-add_library(lab_core src/syntax.cpp src/graph.cpp src/protocol.cpp src/cfg.cpp)
+add_library(lab_core src/syntax.cpp src/graph.cpp src/protocol.cpp src/cfg.cpp src/SSA.cpp)
 target_include_directories(lab_core PUBLIC include)
 target_link_libraries(lab_core PUBLIC tree_sitter_runtime nlohmann_json::nlohmann_json PRIVATE csharp_grammar)
 if(MSVC)

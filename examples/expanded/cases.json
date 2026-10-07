@@ -1,0 +1,2242 @@
+{
+  "schema_version": 1,
+  "language": "C#",
+  "examples": [
+    {
+      "id": 1,
+      "file": "01-sequence.cs",
+      "method": "AddOffset",
+      "title": "Линейное вычисление",
+      "group": "Линейный код",
+      "focus": "Объявление, вычисление и return без развилок.",
+      "graph_notes": "Один последовательный путь от входа к выходу; result зависит от x.",
+      "parameters": [
+        {
+          "type": "int",
+          "name": "x"
+        }
+      ],
+      "cases": [
+        {
+          "args": [
+            0
+          ],
+          "expected": 2
+        },
+        {
+          "args": [
+            3
+          ],
+          "expected": 5
+        },
+        {
+          "args": [
+            -4
+          ],
+          "expected": -2
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "file": "02-reassignment.cs",
+      "method": "Reassign",
+      "title": "Повторное присваивание",
+      "group": "Линейный код",
+      "focus": "Второе присваивание читает предыдущее значение.",
+      "graph_notes": "Для SSA нужны две версии value; второе определение использует первое.",
+      "parameters": [
+        {
+          "type": "int",
+          "name": "x"
+        }
+      ],
+      "cases": [
+        {
+          "args": [
+            0
+          ],
+          "expected": 6
+        },
+        {
+          "args": [
+            2
+          ],
+          "expected": 12
+        },
+        {
+          "args": [
+            -2
+          ],
+          "expected": 0
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "file": "03-data-chain.cs",
+      "method": "ComputeChain",
+      "title": "Цепочка зависимостей",
+      "group": "Линейный код",
+      "focus": "Несколько последовательных зависимых вычислений.",
+      "graph_notes": "Цепочка данных x -> doubled -> shifted -> result без слияний.",
+      "parameters": [
+        {
+          "type": "int",
+          "name": "x"
+        }
+      ],
+      "cases": [
+        {
+          "args": [
+            0
+          ],
+          "expected": 2
+        },
+        {
+          "args": [
+            3
+          ],
+          "expected": 8
+        },
+        {
+          "args": [
+            -2
+          ],
+          "expected": -2
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "file": "04-independent-values.cs",
+      "method": "CombineValues",
+      "title": "Независимые вычисления",
+      "group": "Линейный код",
+      "focus": "Две независимые цепочки объединяются в одном выражении.",
+      "graph_notes": "right не зависит от left, хотя его оператор расположен позже в CFG.",
+      "parameters": [
+        {
+          "type": "int",
+          "name": "x"
+        },
+        {
+          "type": "int",
+          "name": "y"
+        }
+      ],
+      "cases": [
+        {
+          "args": [
+            2,
+            5
+          ],
+          "expected": 7
+        },
+        {
+          "args": [
+            0,
+            0
+          ],
+          "expected": 0
+        },
+        {
+          "args": [
+            -3,
+            1
+          ],
+          "expected": -2
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "file": "05-copy-before-update.cs",
+      "method": "CopyBeforeUpdate",
+      "title": "Копия до изменения",
+      "group": "Линейный код",
+      "focus": "Копирование значения и последующее изменение исходной переменной.",
+      "graph_notes": "return читает right, связанный со старым определением left.",
+      "parameters": [
+        {
+          "type": "int",
+          "name": "x"
+        }
+      ],
+      "cases": [
+        {
+          "args": [
+            0
+          ],
+          "expected": 0
+        },
+        {
+          "args": [
+            7
+          ],
+          "expected": 7
+        },
+        {
+          "args": [
+            -3
+          ],
+          "expected": -3
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "file": "06-overwritten-value.cs",
+      "method": "OverwriteValue",
+      "title": "Неиспользуемое определение",
+      "group": "Линейный код",
+      "focus": "Первое значение перезаписывается до первого чтения.",
+      "graph_notes": "Первый оператор остаётся в исходном CFG, но его значение не достигает return.",
+      "parameters": [
+        {
+          "type": "int",
+          "name": "x"
+        }
+      ],
+      "cases": [
+        {
+          "args": [
+            0
+          ],
+          "expected": 0
+        },
+        {
+          "args": [
+            4
+          ],
+          "expected": 8
+        },
+        {
+          "args": [
+            -2
+          ],
+          "expected": -4
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "file": "07-if.cs",
+      "method": "PositiveOrZero",
+      "title": "Одиночный if",
+      "group": "Ветвления",
+      "focus": "Одна условная ветвь, явного else нет.",
+      "graph_notes": "Ложная ветвь обходит присваивание; перед return возможны два определения result.",
+      "parameters": [
+        {
+          "type": "int",
+          "name": "x"
+        }
+      ],
+      "cases": [
+        {
+          "args": [
+            -2
+          ],
+          "expected": 0
+        },
+        {
+          "args": [
+            0
+          ],
+          "expected": 0
+        },
+        {
+          "args": [
+            3
+          ],
+          "expected": 3
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "file": "08-if-else.cs",
+      "method": "AbsoluteValue",
+      "title": "Две ветви if/else",
+      "group": "Ветвления",
+      "focus": "Две взаимоисключающие ветви определяют одну переменную.",
+      "graph_notes": "Оба пути сходятся перед return; для SSA требуется слияние result.",
+      "parameters": [
+        {
+          "type": "int",
+          "name": "x"
+        }
+      ],
+      "cases": [
+        {
+          "args": [
+            -5
+          ],
+          "expected": 5
+        },
+        {
+          "args": [
+            0
+          ],
+          "expected": 0
+        },
+        {
+          "args": [
+            4
+          ],
+          "expected": 4
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "file": "09-empty-else.cs",
+      "method": "EmptyElse",
+      "title": "Пустая ветвь else",
+      "group": "Ветвления",
+      "focus": "Ветка else содержит пустой блок.",
+      "graph_notes": "Пустой блок не должен обрывать ложный путь к return.",
+      "parameters": [
+        {
+          "type": "bool",
+          "name": "enabled"
+        }
+      ],
+      "cases": [
+        {
+          "args": [
+            true
+          ],
+          "expected": 15
+        },
+        {
+          "args": [
+            false
+          ],
+          "expected": 10
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "file": "10-sequential-if.cs",
+      "method": "IndependentConditions",
+      "title": "Последовательные if",
+      "group": "Ветвления",
+      "focus": "Два if могут сработать независимо друг от друга.",
+      "graph_notes": "После первого слияния второй предикат проверяется на обоих путях.",
+      "parameters": [
+        {
+          "type": "int",
+          "name": "x"
+        }
+      ],
+      "cases": [
+        {
+          "args": [
+            -3
+          ],
+          "expected": 0
+        },
+        {
+          "args": [
+            -2
+          ],
+          "expected": 2
+        },
+        {
+          "args": [
+            3
+          ],
+          "expected": 1
+        },
+        {
+          "args": [
+            2
+          ],
+          "expected": 3
+        },
+        {
+          "args": [
+            0
+          ],
+          "expected": 3
+        }
+      ]
+    },
+    {
+      "id": 11,
+      "file": "11-else-if.cs",
+      "method": "ClassifySign",
+      "title": "Цепочка else if",
+      "group": "Ветвления",
+      "focus": "Три взаимоисключающих пути с общим продолжением.",
+      "graph_notes": "Второй предикат достижим только при ложном первом; три определения result сливаются.",
+      "parameters": [
+        {
+          "type": "int",
+          "name": "x"
+        }
+      ],
+      "cases": [
+        {
+          "args": [
+            -3
+          ],
+          "expected": -1
+        },
+        {
+          "args": [
+            0
+          ],
+          "expected": 0
+        },
+        {
+          "args": [
+            7
+          ],
+          "expected": 1
+        }
+      ]
+    },
+    {
+      "id": 12,
+      "file": "12-nested-if.cs",
+      "method": "ClassifyRange",
+      "title": "Вложенный if",
+      "group": "Ветвления",
+      "focus": "Внутренний if существует только в истинной внешней ветви.",
+      "graph_notes": "Вложенная зависимость по управлению и слияния на двух уровнях.",
+      "parameters": [
+        {
+          "type": "int",
+          "name": "x"
+        }
+      ],
+      "cases": [
+        {
+          "args": [
+            -1
+          ],
+          "expected": 0
+        },
+        {
+          "args": [
+            0
+          ],
+          "expected": 0
+        },
+        {
+          "args": [
+            5
+          ],
+          "expected": 1
+        },
+        {
+          "args": [
+            10
+          ],
+          "expected": 1
+        },
+        {
+          "args": [
+            11
+          ],
+          "expected": 2
+        }
+      ]
+    },
+    {
+      "id": 13,
+      "file": "13-guard-return.cs",
+      "method": "GuardedDouble",
+      "title": "Ранний return",
+      "group": "Ветвления",
+      "focus": "Проверка завершает метод до основного вычисления.",
+      "graph_notes": "Ранний return ведёт к выходу метода и не к следующему присваиванию.",
+      "parameters": [
+        {
+          "type": "int",
+          "name": "value"
+        },
+        {
+          "type": "bool",
+          "name": "enabled"
+        }
+      ],
+      "cases": [
+        {
+          "args": [
+            4,
+            false
+          ],
+          "expected": 0
+        },
+        {
+          "args": [
+            4,
+            true
+          ],
+          "expected": 8
+        },
+        {
+          "args": [
+            -2,
+            true
+          ],
+          "expected": -4
+        }
+      ]
+    },
+    {
+      "id": 14,
+      "file": "14-return-in-else.cs",
+      "method": "ReturnInElse",
+      "title": "Return в обеих ветвях",
+      "group": "Ветвления",
+      "focus": "Явный else после ветви, завершающей метод.",
+      "graph_notes": "Обе ветви заканчиваются выходом; продолжения после if нет.",
+      "parameters": [
+        {
+          "type": "int",
+          "name": "x"
+        }
+      ],
+      "cases": [
+        {
+          "args": [
+            -3
+          ],
+          "expected": -1
+        },
+        {
+          "args": [
+            0
+          ],
+          "expected": 1
+        },
+        {
+          "args": [
+            4
+          ],
+          "expected": 5
+        }
+      ]
+    },
+    {
+      "id": 15,
+      "file": "15-all-paths-return.cs",
+      "method": "SignWithReturns",
+      "title": "Все пути завершаются return",
+      "group": "Ветвления",
+      "focus": "Три выхода из метода без общей переменной результата.",
+      "graph_notes": "Сравнить с 11: одинаковые результаты, другая структура CFG, нет слияния result.",
+      "parameters": [
+        {
+          "type": "int",
+          "name": "x"
+        }
+      ],
+      "cases": [
+        {
+          "args": [
+            -3
+          ],
+          "expected": -1
+        },
+        {
+          "args": [
+            0
+          ],
+          "expected": 0
+        },
+        {
+          "args": [
+            7
+          ],
+          "expected": 1
+        }
+      ]
+    },
+    {
+      "id": 16,
+      "file": "16-short-circuit-and.cs",
+      "method": "GuardedDivisionAnd",
+      "title": "Короткое замыкание &&",
+      "group": "Выражения и выбор",
+      "focus": "Правая часть && вычисляется только при истинной левой.",
+      "graph_notes": "При divisor = 0 деление недостижимо; учесть отдельный путь короткого замыкания.",
+      "parameters": [
+        {
+          "type": "int",
+          "name": "divisor"
+        }
+      ],
+      "cases": [
+        {
+          "args": [
+            0
+          ],
+          "expected": 0
+        },
+        {
+          "args": [
+            10
+          ],
+          "expected": 1
+        },
+        {
+          "args": [
+            20
+          ],
+          "expected": 1
+        },
+        {
+          "args": [
+            25
+          ],
+          "expected": 0
+        },
+        {
+          "args": [
+            -5
+          ],
+          "expected": 0
+        }
+      ]
+    },
+    {
+      "id": 17,
+      "file": "17-short-circuit-or.cs",
+      "method": "GuardedDivisionOr",
+      "title": "Короткое замыкание ||",
+      "group": "Выражения и выбор",
+      "focus": "Правая часть || вычисляется только при ложной левой.",
+      "graph_notes": "При divisor = 0 истинный левый предикат сразу ведёт в тело if.",
+      "parameters": [
+        {
+          "type": "int",
+          "name": "divisor"
+        }
+      ],
+      "cases": [
+        {
+          "args": [
+            0
+          ],
+          "expected": 1
+        },
+        {
+          "args": [
+            10
+          ],
+          "expected": 0
+        },
+        {
+          "args": [
+            25
+          ],
+          "expected": 0
+        },
+        {
+          "args": [
+            50
+          ],
+          "expected": 1
+        },
+        {
+          "args": [
+            -5
+          ],
+          "expected": 1
+        }
+      ]
+    },
+    {
+      "id": 18,
+      "file": "18-ternary.cs",
+      "method": "AbsoluteWithTernary",
+      "title": "Условное выражение ?:",
+      "group": "Выражения и выбор",
+      "focus": "Выбор значения внутри выражения, без if_statement.",
+      "graph_notes": "Выбор и слияние значения присутствуют внутри выражения; сравнить с 08.",
+      "parameters": [
+        {
+          "type": "int",
+          "name": "x"
+        }
+      ],
+      "cases": [
+        {
+          "args": [
+            -5
+          ],
+          "expected": 5
+        },
+        {
+          "args": [
+            0
+          ],
+          "expected": 0
+        },
+        {
+          "args": [
+            4
+          ],
+          "expected": 4
+        }
+      ]
+    },
+    {
+      "id": 19,
+      "file": "19-switch.cs",
+      "method": "SelectCode",
+      "title": "Switch с default",
+      "group": "Выражения и выбор",
+      "focus": "Многовариантный выбор; здесь break завершает switch.",
+      "graph_notes": "Все case и default ведут к общему продолжению; break направлен за switch.",
+      "parameters": [
+        {
+          "type": "int",
+          "name": "code"
+        }
+      ],
+      "cases": [
+        {
+          "args": [
+            0
+          ],
+          "expected": 0
+        },
+        {
+          "args": [
+            1
+          ],
+          "expected": 10
+        },
+        {
+          "args": [
+            2
+          ],
+          "expected": 20
+        },
+        {
+          "args": [
+            9
+          ],
+          "expected": -1
+        },
+        {
+          "args": [
+            -1
+          ],
+          "expected": -1
+        }
+      ]
+    },
+    {
+      "id": 20,
+      "file": "20-while.cs",
+      "method": "SumWhile",
+      "title": "Базовый while",
+      "group": "Базовые циклы",
+      "focus": "Проверка перед телом, счётчик и аккумулятор.",
+      "graph_notes": "Истинное ребро входит в тело, обратное возвращается к проверке; значения i и total сливаются.",
+      "parameters": [
+        {
+          "type": "int",
+          "name": "n"
+        }
+      ],
+      "cases": [
+        {
+          "args": [
+            0
+          ],
+          "expected": 0
+        },
+        {
+          "args": [
+            1
+          ],
+          "expected": 0
+        },
+        {
+          "args": [
+            4
+          ],
+          "expected": 6
+        },
+        {
+          "args": [
+            -2
+          ],
+          "expected": 0
+        }
+      ]
+    },
+    {
+      "id": 21,
+      "file": "21-for.cs",
+      "method": "SumFor",
+      "title": "Базовый for",
+      "group": "Базовые циклы",
+      "focus": "Инициализатор, условие, тело и шаг for.",
+      "graph_notes": "Инициализатор выполняется один раз; из тела путь ведёт к шагу, затем к условию.",
+      "parameters": [
+        {
+          "type": "int",
+          "name": "n"
+        }
+      ],
+      "cases": [
+        {
+          "args": [
+            0
+          ],
+          "expected": 0
+        },
+        {
+          "args": [
+            1
+          ],
+          "expected": 1
+        },
+        {
+          "args": [
+            4
+          ],
+          "expected": 10
+        },
+        {
+          "args": [
+            -2
+          ],
+          "expected": 0
+        }
+      ]
+    },
+    {
+      "id": 22,
+      "file": "22-do-while.cs",
+      "method": "CountDoWhile",
+      "title": "Базовый do/while",
+      "group": "Базовые циклы",
+      "focus": "Тело выполняется до первой проверки условия.",
+      "graph_notes": "При n <= 0 тело всё равно выполняется один раз; вход ведёт прямо в тело.",
+      "parameters": [
+        {
+          "type": "int",
+          "name": "n"
+        }
+      ],
+      "cases": [
+        {
+          "args": [
+            0
+          ],
+          "expected": 1
+        },
+        {
+          "args": [
+            -2
+          ],
+          "expected": 1
+        },
+        {
+          "args": [
+            1
+          ],
+          "expected": 1
+        },
+        {
+          "args": [
+            3
+          ],
+          "expected": 3
+        }
+      ]
+    },
+    {
+      "id": 23,
+      "file": "23-zero-iterations.cs",
+      "method": "PreserveOnEmptyLoop",
+      "title": "Ноль итераций",
+      "group": "Базовые циклы",
+      "focus": "Начальное значение сохраняется, когда тело недостижимо при данном входе.",
+      "graph_notes": "Путь от первой ложной проверки сразу ведёт за цикл; начальное определение достигает return.",
+      "parameters": [
+        {
+          "type": "int",
+          "name": "n"
+        }
+      ],
+      "cases": [
+        {
+          "args": [
+            0
+          ],
+          "expected": 7
+        },
+        {
+          "args": [
+            -2
+          ],
+          "expected": 7
+        },
+        {
+          "args": [
+            1
+          ],
+          "expected": 8
+        },
+        {
+          "args": [
+            3
+          ],
+          "expected": 10
+        }
+      ]
+    },
+    {
+      "id": 24,
+      "file": "24-one-iteration.cs",
+      "method": "InclusiveBound",
+      "title": "Включительная граница цикла",
+      "group": "Базовые циклы",
+      "focus": "При n = 0 выполняется ровно одна итерация из-за <=.",
+      "graph_notes": "Проверить отличие < и <=: одна итерация при нулевой границе, ноль при отрицательной.",
+      "parameters": [
+        {
+          "type": "int",
+          "name": "n"
+        }
+      ],
+      "cases": [
+        {
+          "args": [
+            0
+          ],
+          "expected": 1
+        },
+        {
+          "args": [
+            1
+          ],
+          "expected": 2
+        },
+        {
+          "args": [
+            3
+          ],
+          "expected": 4
+        },
+        {
+          "args": [
+            -1
+          ],
+          "expected": 0
+        }
+      ]
+    },
+    {
+      "id": 25,
+      "file": "25-loop-local-variable.cs",
+      "method": "SumLocalValues",
+      "title": "Локальная переменная в теле",
+      "group": "Базовые циклы",
+      "focus": "Временная переменная объявляется внутри тела цикла.",
+      "graph_notes": "doubled определяется перед каждым чтением в теле, не переносится между итерациями.",
+      "parameters": [
+        {
+          "type": "int",
+          "name": "n"
+        }
+      ],
+      "cases": [
+        {
+          "args": [
+            0
+          ],
+          "expected": 0
+        },
+        {
+          "args": [
+            1
+          ],
+          "expected": 0
+        },
+        {
+          "args": [
+            4
+          ],
+          "expected": 12
+        }
+      ]
+    },
+    {
+      "id": 26,
+      "file": "26-loop-if.cs",
+      "method": "SumEven",
+      "title": "If внутри одного цикла",
+      "group": "Базовые циклы",
+      "focus": "Условное обновление аккумулятора без ранних переходов.",
+      "graph_notes": "Обе ветви if сходятся перед шагом for; для total есть слияние после if и на входе цикла.",
+      "parameters": [
+        {
+          "type": "int",
+          "name": "n"
+        }
+      ],
+      "cases": [
+        {
+          "args": [
+            0
+          ],
+          "expected": 0
+        },
+        {
+          "args": [
+            1
+          ],
+          "expected": 0
+        },
+        {
+          "args": [
+            6
+          ],
+          "expected": 6
+        },
+        {
+          "args": [
+            7
+          ],
+          "expected": 12
+        }
+      ]
+    },
+    {
+      "id": 27,
+      "file": "27-while-break.cs",
+      "method": "CountWithWhileBreak",
+      "title": "Break в одном while",
+      "group": "Ранние переходы в одном цикле",
+      "focus": "Один цикл и одна точка досрочного выхода.",
+      "graph_notes": "break ведёт за while, минуя увеличение счётчика и повторную проверку.",
+      "parameters": [
+        {
+          "type": "int",
+          "name": "n"
+        },
+        {
+          "type": "int",
+          "name": "limit"
+        }
+      ],
+      "cases": [
+        {
+          "args": [
+            5,
+            2
+          ],
+          "expected": 2
+        },
+        {
+          "args": [
+            5,
+            0
+          ],
+          "expected": 0
+        },
+        {
+          "args": [
+            0,
+            3
+          ],
+          "expected": 0
+        },
+        {
+          "args": [
+            3,
+            5
+          ],
+          "expected": 3
+        }
+      ]
+    },
+    {
+      "id": 28,
+      "file": "28-for-break.cs",
+      "method": "SumWithForBreak",
+      "title": "Break в одном for",
+      "group": "Ранние переходы в одном цикле",
+      "focus": "Досрочный выход из for до обновления аккумулятора.",
+      "graph_notes": "break пропускает шаг i++ и условие for; начальный и накопленный total достигают return.",
+      "parameters": [
+        {
+          "type": "int",
+          "name": "n"
+        },
+        {
+          "type": "int",
+          "name": "limit"
+        }
+      ],
+      "cases": [
+        {
+          "args": [
+            6,
+            3
+          ],
+          "expected": 3
+        },
+        {
+          "args": [
+            3,
+            10
+          ],
+          "expected": 3
+        },
+        {
+          "args": [
+            6,
+            0
+          ],
+          "expected": 0
+        },
+        {
+          "args": [
+            0,
+            3
+          ],
+          "expected": 0
+        }
+      ]
+    },
+    {
+      "id": 29,
+      "file": "29-do-while-break.cs",
+      "method": "CountWithDoBreak",
+      "title": "Break в одном do/while",
+      "group": "Ранние переходы в одном цикле",
+      "focus": "Break может сработать ещё до первой проверки do/while.",
+      "graph_notes": "break ведёт за цикл и обходит нижний предикат; при limit = 0 увеличение недостижимо.",
+      "parameters": [
+        {
+          "type": "int",
+          "name": "n"
+        },
+        {
+          "type": "int",
+          "name": "limit"
+        }
+      ],
+      "cases": [
+        {
+          "args": [
+            5,
+            2
+          ],
+          "expected": 2
+        },
+        {
+          "args": [
+            0,
+            3
+          ],
+          "expected": 1
+        },
+        {
+          "args": [
+            5,
+            0
+          ],
+          "expected": 0
+        },
+        {
+          "args": [
+            2,
+            5
+          ],
+          "expected": 2
+        },
+        {
+          "args": [
+            0,
+            0
+          ],
+          "expected": 0
+        }
+      ]
+    },
+    {
+      "id": 30,
+      "file": "30-for-continue.cs",
+      "method": "SumWithForContinue",
+      "title": "Continue в одном for",
+      "group": "Ранние переходы в одном цикле",
+      "focus": "Continue пропускает суммирование чётных значений.",
+      "graph_notes": "Цель continue — шаг i++, после которого проверяется условие for.",
+      "parameters": [
+        {
+          "type": "int",
+          "name": "n"
+        }
+      ],
+      "cases": [
+        {
+          "args": [
+            0
+          ],
+          "expected": 0
+        },
+        {
+          "args": [
+            1
+          ],
+          "expected": 0
+        },
+        {
+          "args": [
+            5
+          ],
+          "expected": 4
+        },
+        {
+          "args": [
+            6
+          ],
+          "expected": 9
+        }
+      ]
+    },
+    {
+      "id": 31,
+      "file": "31-while-continue.cs",
+      "method": "SumWithWhileContinue",
+      "title": "Continue в одном while",
+      "group": "Ранние переходы в одном цикле",
+      "focus": "Счётчик увеличивается перед возможным continue.",
+      "graph_notes": "continue возвращает к условию while; увеличение счётчика уже произошло.",
+      "parameters": [
+        {
+          "type": "int",
+          "name": "n"
+        }
+      ],
+      "cases": [
+        {
+          "args": [
+            0
+          ],
+          "expected": 0
+        },
+        {
+          "args": [
+            1
+          ],
+          "expected": 1
+        },
+        {
+          "args": [
+            4
+          ],
+          "expected": 4
+        },
+        {
+          "args": [
+            5
+          ],
+          "expected": 9
+        }
+      ]
+    },
+    {
+      "id": 32,
+      "file": "32-do-while-continue.cs",
+      "method": "SumWithDoContinue",
+      "title": "Continue в одном do/while",
+      "group": "Ранние переходы в одном цикле",
+      "focus": "Пропуск остатка тела с переходом к нижнему условию.",
+      "graph_notes": "continue ведёт к условию do/while, а не прямо к началу тела.",
+      "parameters": [
+        {
+          "type": "int",
+          "name": "n"
+        }
+      ],
+      "cases": [
+        {
+          "args": [
+            0
+          ],
+          "expected": 1
+        },
+        {
+          "args": [
+            1
+          ],
+          "expected": 1
+        },
+        {
+          "args": [
+            2
+          ],
+          "expected": 1
+        },
+        {
+          "args": [
+            5
+          ],
+          "expected": 9
+        }
+      ]
+    },
+    {
+      "id": 33,
+      "file": "33-loop-return.cs",
+      "method": "FirstDivisor",
+      "title": "Return из одного цикла",
+      "group": "Ранние переходы в одном цикле",
+      "focus": "Найденный делитель немедленно завершает метод.",
+      "graph_notes": "return из тела направлен к выходу метода, минуя завершающий return -1.",
+      "parameters": [
+        {
+          "type": "int",
+          "name": "n"
+        }
+      ],
+      "cases": [
+        {
+          "args": [
+            4
+          ],
+          "expected": 2
+        },
+        {
+          "args": [
+            9
+          ],
+          "expected": 3
+        },
+        {
+          "args": [
+            7
+          ],
+          "expected": -1
+        },
+        {
+          "args": [
+            2
+          ],
+          "expected": -1
+        },
+        {
+          "args": [
+            1
+          ],
+          "expected": -1
+        },
+        {
+          "args": [
+            0
+          ],
+          "expected": -1
+        }
+      ]
+    },
+    {
+      "id": 34,
+      "file": "34-multiple-breaks.cs",
+      "method": "SumWithTwoBreaks",
+      "title": "Две точки break",
+      "group": "Ранние переходы в одном цикле",
+      "focus": "Разные предикаты выходят из одного и того же цикла.",
+      "graph_notes": "Оба break имеют одну цель; второй if недостижим при истинном первом.",
+      "parameters": [
+        {
+          "type": "int",
+          "name": "n"
+        },
+        {
+          "type": "int",
+          "name": "firstStop"
+        },
+        {
+          "type": "int",
+          "name": "secondStop"
+        }
+      ],
+      "cases": [
+        {
+          "args": [
+            6,
+            2,
+            4
+          ],
+          "expected": 1
+        },
+        {
+          "args": [
+            6,
+            5,
+            3
+          ],
+          "expected": 3
+        },
+        {
+          "args": [
+            6,
+            0,
+            4
+          ],
+          "expected": 0
+        },
+        {
+          "args": [
+            6,
+            7,
+            8
+          ],
+          "expected": 15
+        },
+        {
+          "args": [
+            0,
+            2,
+            4
+          ],
+          "expected": 0
+        }
+      ]
+    },
+    {
+      "id": 35,
+      "file": "35-multiple-continues.cs",
+      "method": "SumWithTwoContinues",
+      "title": "Две точки continue",
+      "group": "Ранние переходы в одном цикле",
+      "focus": "Два независимых основания пропустить остаток итерации.",
+      "graph_notes": "Оба continue ведут к одному шагу for; второй предикат не проверяется на первом пути.",
+      "parameters": [
+        {
+          "type": "int",
+          "name": "n"
+        }
+      ],
+      "cases": [
+        {
+          "args": [
+            0
+          ],
+          "expected": 0
+        },
+        {
+          "args": [
+            3
+          ],
+          "expected": 1
+        },
+        {
+          "args": [
+            6
+          ],
+          "expected": 6
+        },
+        {
+          "args": [
+            10
+          ],
+          "expected": 13
+        }
+      ]
+    },
+    {
+      "id": 36,
+      "file": "36-continue-before-break.cs",
+      "method": "SumWithSkipAndStop",
+      "title": "Continue перед break",
+      "group": "Ранние переходы в одном цикле",
+      "focus": "Сочетание двух уже разобранных переходов в одном цикле.",
+      "graph_notes": "continue обходит проверку break; цели переходов различны: шаг и выход цикла.",
+      "parameters": [
+        {
+          "type": "int",
+          "name": "n"
+        },
+        {
+          "type": "int",
+          "name": "limit"
+        }
+      ],
+      "cases": [
+        {
+          "args": [
+            6,
+            4
+          ],
+          "expected": 4
+        },
+        {
+          "args": [
+            6,
+            3
+          ],
+          "expected": 1
+        },
+        {
+          "args": [
+            6,
+            0
+          ],
+          "expected": 0
+        },
+        {
+          "args": [
+            6,
+            10
+          ],
+          "expected": 9
+        },
+        {
+          "args": [
+            0,
+            3
+          ],
+          "expected": 0
+        }
+      ]
+    },
+    {
+      "id": 37,
+      "file": "37-unconditional-break.cs",
+      "method": "SinglePass",
+      "title": "Цикл с безусловным break",
+      "group": "Ранние переходы в одном цикле",
+      "focus": "Условие всегда истинно, но тело выполняется один раз.",
+      "graph_notes": "Структура цикла не означает достижимое обратное ребро: каждый путь тела заканчивается break.",
+      "parameters": [
+        {
+          "type": "int",
+          "name": "step"
+        }
+      ],
+      "cases": [
+        {
+          "args": [
+            0
+          ],
+          "expected": 0
+        },
+        {
+          "args": [
+            3
+          ],
+          "expected": 3
+        },
+        {
+          "args": [
+            -2
+          ],
+          "expected": -2
+        }
+      ]
+    },
+    {
+      "id": 38,
+      "file": "38-sequential-loops.cs",
+      "method": "TwoSequentialLoops",
+      "title": "Два последовательных цикла",
+      "group": "Сочетания конструкций",
+      "focus": "Выход первого цикла является входом второго.",
+      "graph_notes": "Два отдельных цикла CFG и перенос определения total между ними.",
+      "parameters": [
+        {
+          "type": "int",
+          "name": "n"
+        },
+        {
+          "type": "int",
+          "name": "m"
+        }
+      ],
+      "cases": [
+        {
+          "args": [
+            4,
+            3
+          ],
+          "expected": 3
+        },
+        {
+          "args": [
+            0,
+            3
+          ],
+          "expected": -3
+        },
+        {
+          "args": [
+            4,
+            0
+          ],
+          "expected": 6
+        },
+        {
+          "args": [
+            0,
+            0
+          ],
+          "expected": 0
+        }
+      ]
+    },
+    {
+      "id": 39,
+      "file": "39-loop-inside-if.cs",
+      "method": "ConditionalLoop",
+      "title": "Цикл внутри if",
+      "group": "Сочетания конструкций",
+      "focus": "Весь цикл находится в одной условной ветви.",
+      "graph_notes": "При enabled = false обходится и тело, и условие while.",
+      "parameters": [
+        {
+          "type": "int",
+          "name": "n"
+        },
+        {
+          "type": "bool",
+          "name": "enabled"
+        }
+      ],
+      "cases": [
+        {
+          "args": [
+            3,
+            true
+          ],
+          "expected": 3
+        },
+        {
+          "args": [
+            3,
+            false
+          ],
+          "expected": 0
+        },
+        {
+          "args": [
+            0,
+            true
+          ],
+          "expected": 0
+        },
+        {
+          "args": [
+            -1,
+            true
+          ],
+          "expected": 0
+        }
+      ]
+    },
+    {
+      "id": 40,
+      "file": "40-if-after-loop.cs",
+      "method": "AdjustAfterLoop",
+      "title": "Ветвление после цикла",
+      "group": "Сочетания конструкций",
+      "focus": "Результат цикла определяет последующее ветвление.",
+      "graph_notes": "Предикат после цикла читает значение total со слияния выходных путей цикла.",
+      "parameters": [
+        {
+          "type": "int",
+          "name": "n"
+        }
+      ],
+      "cases": [
+        {
+          "args": [
+            0
+          ],
+          "expected": 0
+        },
+        {
+          "args": [
+            4
+          ],
+          "expected": 6
+        },
+        {
+          "args": [
+            5
+          ],
+          "expected": 10
+        },
+        {
+          "args": [
+            6
+          ],
+          "expected": 5
+        }
+      ]
+    },
+    {
+      "id": 41,
+      "file": "41-nested-for.cs",
+      "method": "CountRectangleFor",
+      "title": "Два вложенных for",
+      "group": "Сочетания конструкций",
+      "focus": "Первое появление вложенных циклов, без ранних переходов.",
+      "graph_notes": "Внутренний счётчик инициализируется заново на каждой внешней итерации.",
+      "parameters": [
+        {
+          "type": "int",
+          "name": "rows"
+        },
+        {
+          "type": "int",
+          "name": "columns"
+        }
+      ],
+      "cases": [
+        {
+          "args": [
+            2,
+            3
+          ],
+          "expected": 6
+        },
+        {
+          "args": [
+            0,
+            3
+          ],
+          "expected": 0
+        },
+        {
+          "args": [
+            2,
+            0
+          ],
+          "expected": 0
+        },
+        {
+          "args": [
+            1,
+            1
+          ],
+          "expected": 1
+        }
+      ]
+    },
+    {
+      "id": 42,
+      "file": "42-nested-while.cs",
+      "method": "CountRectangleWhile",
+      "title": "Два вложенных while",
+      "group": "Сочетания конструкций",
+      "focus": "Вложенные while с явным обновлением каждого счётчика.",
+      "graph_notes": "Выход внутреннего цикла ведёт к row++, а его обратное ребро — к условию column.",
+      "parameters": [
+        {
+          "type": "int",
+          "name": "rows"
+        },
+        {
+          "type": "int",
+          "name": "columns"
+        }
+      ],
+      "cases": [
+        {
+          "args": [
+            2,
+            3
+          ],
+          "expected": 6
+        },
+        {
+          "args": [
+            0,
+            3
+          ],
+          "expected": 0
+        },
+        {
+          "args": [
+            2,
+            0
+          ],
+          "expected": 0
+        },
+        {
+          "args": [
+            1,
+            1
+          ],
+          "expected": 1
+        }
+      ]
+    },
+    {
+      "id": 43,
+      "file": "43-nested-for-do-while.cs",
+      "method": "CountMixedLoops",
+      "title": "For с внутренним do/while",
+      "group": "Сочетания конструкций",
+      "focus": "Сочетание циклов с проверкой до и после тела.",
+      "graph_notes": "При columns = 0 внутренний цикл делает один проход на каждую внешнюю итерацию.",
+      "parameters": [
+        {
+          "type": "int",
+          "name": "rows"
+        },
+        {
+          "type": "int",
+          "name": "columns"
+        }
+      ],
+      "cases": [
+        {
+          "args": [
+            2,
+            3
+          ],
+          "expected": 6
+        },
+        {
+          "args": [
+            2,
+            0
+          ],
+          "expected": 2
+        },
+        {
+          "args": [
+            0,
+            3
+          ],
+          "expected": 0
+        },
+        {
+          "args": [
+            1,
+            1
+          ],
+          "expected": 1
+        }
+      ]
+    },
+    {
+      "id": 44,
+      "file": "44-nested-inner-break.cs",
+      "method": "CountWithInnerBreak",
+      "title": "Break внутреннего цикла",
+      "group": "Вложенные переходы и комплексные случаи",
+      "focus": "Ранее изученный break перенесён во вложенный цикл.",
+      "graph_notes": "break выходит только из внутреннего for и ведёт к шагу внешнего for.",
+      "parameters": [
+        {
+          "type": "int",
+          "name": "rows"
+        },
+        {
+          "type": "int",
+          "name": "columns"
+        },
+        {
+          "type": "int",
+          "name": "limit"
+        }
+      ],
+      "cases": [
+        {
+          "args": [
+            3,
+            4,
+            2
+          ],
+          "expected": 6
+        },
+        {
+          "args": [
+            2,
+            4,
+            0
+          ],
+          "expected": 0
+        },
+        {
+          "args": [
+            2,
+            3,
+            5
+          ],
+          "expected": 6
+        },
+        {
+          "args": [
+            0,
+            3,
+            1
+          ],
+          "expected": 0
+        }
+      ]
+    },
+    {
+      "id": 45,
+      "file": "45-nested-inner-continue.cs",
+      "method": "CountWithoutDiagonal",
+      "title": "Continue внутреннего цикла",
+      "group": "Вложенные переходы и комплексные случаи",
+      "focus": "Пропуск диагональных пар, внешняя итерация продолжается.",
+      "graph_notes": "continue направлен к column++, а не к row++.",
+      "parameters": [
+        {
+          "type": "int",
+          "name": "rows"
+        },
+        {
+          "type": "int",
+          "name": "columns"
+        }
+      ],
+      "cases": [
+        {
+          "args": [
+            3,
+            3
+          ],
+          "expected": 6
+        },
+        {
+          "args": [
+            2,
+            3
+          ],
+          "expected": 4
+        },
+        {
+          "args": [
+            1,
+            1
+          ],
+          "expected": 0
+        },
+        {
+          "args": [
+            2,
+            1
+          ],
+          "expected": 1
+        },
+        {
+          "args": [
+            0,
+            3
+          ],
+          "expected": 0
+        }
+      ]
+    },
+    {
+      "id": 46,
+      "file": "46-nested-return.cs",
+      "method": "FindPairIndex",
+      "title": "Return из вложенного цикла",
+      "group": "Вложенные переходы и комплексные случаи",
+      "focus": "Первое совпадение завершает метод из двух вложенных циклов.",
+      "graph_notes": "return обходит оба шага и все последующие проверки, а не выходит только из внутреннего цикла.",
+      "parameters": [
+        {
+          "type": "int",
+          "name": "rows"
+        },
+        {
+          "type": "int",
+          "name": "columns"
+        },
+        {
+          "type": "int",
+          "name": "target"
+        }
+      ],
+      "cases": [
+        {
+          "args": [
+            3,
+            4,
+            3
+          ],
+          "expected": 3
+        },
+        {
+          "args": [
+            3,
+            4,
+            4
+          ],
+          "expected": 7
+        },
+        {
+          "args": [
+            3,
+            4,
+            6
+          ],
+          "expected": -1
+        },
+        {
+          "args": [
+            3,
+            4,
+            0
+          ],
+          "expected": 0
+        },
+        {
+          "args": [
+            0,
+            4,
+            0
+          ],
+          "expected": -1
+        }
+      ]
+    },
+    {
+      "id": 47,
+      "file": "47-dependent-loop-bound.cs",
+      "method": "CountTriangle",
+      "title": "Зависимая граница внутреннего цикла",
+      "group": "Вложенные переходы и комплексные случаи",
+      "focus": "Число внутренних итераций зависит от внешнего счётчика.",
+      "graph_notes": "Предикат column <= row зависит от определения row внешнего цикла.",
+      "parameters": [
+        {
+          "type": "int",
+          "name": "n"
+        }
+      ],
+      "cases": [
+        {
+          "args": [
+            0
+          ],
+          "expected": 0
+        },
+        {
+          "args": [
+            1
+          ],
+          "expected": 1
+        },
+        {
+          "args": [
+            3
+          ],
+          "expected": 6
+        },
+        {
+          "args": [
+            5
+          ],
+          "expected": 15
+        }
+      ]
+    },
+    {
+      "id": 48,
+      "file": "48-switch-inside-loop.cs",
+      "method": "SumSwitchInLoop",
+      "title": "Switch внутри цикла",
+      "group": "Вложенные переходы и комплексные случаи",
+      "focus": "Различение области действия break у switch и цикла.",
+      "graph_notes": "Каждый break завершает switch, после чего выполняется i++; цикл не прерывается.",
+      "parameters": [
+        {
+          "type": "int",
+          "name": "n"
+        }
+      ],
+      "cases": [
+        {
+          "args": [
+            0
+          ],
+          "expected": 0
+        },
+        {
+          "args": [
+            1
+          ],
+          "expected": 1
+        },
+        {
+          "args": [
+            2
+          ],
+          "expected": 3
+        },
+        {
+          "args": [
+            3
+          ],
+          "expected": 6
+        },
+        {
+          "args": [
+            4
+          ],
+          "expected": 7
+        },
+        {
+          "args": [
+            6
+          ],
+          "expected": 12
+        }
+      ]
+    },
+    {
+      "id": 49,
+      "file": "49-short-circuit-side-effect.cs",
+      "method": "ConditionSideEffect",
+      "title": "Побочный эффект в условии цикла",
+      "group": "Вложенные переходы и комплексные случаи",
+      "focus": "Короткое замыкание определяет, произойдёт ли присваивание в условии.",
+      "graph_notes": "При ложном count < limit remaining не меняется; иначе меняется даже при ложном втором предикате.",
+      "parameters": [
+        {
+          "type": "int",
+          "name": "limit"
+        },
+        {
+          "type": "int",
+          "name": "budget"
+        }
+      ],
+      "cases": [
+        {
+          "args": [
+            0,
+            5
+          ],
+          "expected": 5
+        },
+        {
+          "args": [
+            2,
+            5
+          ],
+          "expected": 203
+        },
+        {
+          "args": [
+            10,
+            3
+          ],
+          "expected": 200
+        },
+        {
+          "args": [
+            10,
+            1
+          ],
+          "expected": 0
+        },
+        {
+          "args": [
+            2,
+            0
+          ],
+          "expected": -1
+        }
+      ]
+    },
+    {
+      "id": 50,
+      "file": "50-combined-search.cs",
+      "method": "SearchWithSkips",
+      "title": "Комплексный поиск с пропусками",
+      "group": "Вложенные переходы и комплексные случаи",
+      "focus": "Совместная проверка уже знакомых ветвей, вложенных циклов и трёх видов переходов.",
+      "graph_notes": "break завершает внешний цикл, continue ведёт к шагу внутреннего, return завершает метод.",
+      "parameters": [
+        {
+          "type": "int",
+          "name": "rows"
+        },
+        {
+          "type": "int",
+          "name": "columns"
+        },
+        {
+          "type": "int",
+          "name": "target"
+        }
+      ],
+      "cases": [
+        {
+          "args": [
+            3,
+            3,
+            1
+          ],
+          "expected": 1
+        },
+        {
+          "args": [
+            3,
+            3,
+            3
+          ],
+          "expected": 4
+        },
+        {
+          "args": [
+            2,
+            2,
+            2
+          ],
+          "expected": -1
+        },
+        {
+          "args": [
+            0,
+            3,
+            1
+          ],
+          "expected": -1
+        },
+        {
+          "args": [
+            3,
+            0,
+            1
+          ],
+          "expected": -1
+        },
+        {
+          "args": [
+            3,
+            3,
+            -1
+          ],
+          "expected": -1
+        },
+        {
+          "args": [
+            3,
+            3,
+            0
+          ],
+          "expected": -1
+        }
+      ]
+    }
+  ]
+}
