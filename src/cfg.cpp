@@ -2,7 +2,7 @@
 #include "lab/cfg.hpp"
 namespace lab
 {
-    static std::string last_case_value_name="";
+    static std::string last_case_value_name = "";
     std::string get_next_id(const Graph &g) { return "n" + std::to_string(g.nodes.size()); }
     void handle_lc(Graph &g, GraphNode &g_cond, std::vector<LoopControl> &lcs, std::vector<std::string> &out)
     {
@@ -25,9 +25,9 @@ namespace lab
         }
     }
 
-    GraphNode create_simple_node(Graph &g, const SyntaxNode &node, const std::vector<std::string> &parent, const std::string id)
+    GraphNode create_simple_node(Graph &g, const SyntaxNode &node, const std::vector<std::string> &parent, const std::string id, const std::string kind = "")
     {
-        GraphNode g_node = GraphNode{id, std::string(node.kind()), std::string(node.text()), node.range()};
+        GraphNode g_node = GraphNode{id, kind == "" ? std::string(node.kind()) : kind, std::string(node.text()), node.range()};
         g.nodes.push_back(g_node);
         for (const auto &p : parent)
         {
@@ -66,7 +66,7 @@ namespace lab
             else if (n.kind() == "if_statement")
             {
                 SyntaxNode condition_node = n.field("condition");
-                GraphNode g_cond = create_simple_node(g, condition_node, p.outs, id);
+                GraphNode g_cond = create_simple_node(g, condition_node, p.outs, id,"condition");
                 SyntaxNode consequence_node = n.field("consequence");
                 SyntaxNode alternative_node = n.field("alternative");
                 // g.edges.push_back(GraphEdge{g_cond.id, visit(consequence_node, id, depth + 1), "true"});
@@ -96,7 +96,7 @@ namespace lab
             else if (n.kind() == "while_statement")
             {
                 SyntaxNode condition_node = n.field("condition");
-                GraphNode g_cond = create_simple_node(g, condition_node, p.outs, id);
+                GraphNode g_cond = create_simple_node(g, condition_node, p.outs, id, "condition");
                 SyntaxNode body_node = n.field("body");
                 // std::vector<std::string> cond_node_id = visit(condition_node, std::vector{id}, depth + 1);
                 NodeResult body_node_id = visit(body_node, NodeResult{std::vector{id}, {}}, depth + 1);
@@ -126,7 +126,7 @@ namespace lab
                 SyntaxNode init_node = n.field("initializer");
                 GraphNode g_init = create_simple_node(g, init_node, p.outs, id);
                 SyntaxNode condition_node = n.field("condition");
-                GraphNode g_cond = create_simple_node(g, condition_node, {g_init.id}, get_next_id(g));
+                GraphNode g_cond = create_simple_node(g, condition_node, {g_init.id}, get_next_id(g), "condition");
 
                 SyntaxNode body_node = n.field("body");
                 NodeResult body_node_id = visit(body_node, NodeResult{std::vector{g_cond.id}, {}}, depth + 1);
@@ -151,7 +151,7 @@ namespace lab
                 SyntaxNode condition_node = n.field("condition");
                 SyntaxNode body_node = n.field("body");
                 NodeResult body_node_id = visit(body_node, p, depth + 1);
-                GraphNode g_cond = create_simple_node(g, condition_node, body_node_id.outs, get_next_id(g));
+                GraphNode g_cond = create_simple_node(g, condition_node, body_node_id.outs, get_next_id(g), "condition");
                 std::vector<std::string> out = {g_cond.id};
                 handle_lc(g, g_cond, body_node_id.lc, out);
 
@@ -202,7 +202,7 @@ namespace lab
                 }
                 NodeResult nr;
                 // std::string value = "val"; // TODO: find parent in graph, get its value. We ACTUALLY DONT know its id by p.outs[0]
-                std::string value = last_case_value_name;// TODO: this WILL break
+                std::string value = last_case_value_name; // TODO: this WILL break
                 if (constant_pattern != "")
                 { // regular branch
                     std::string cond_id = get_next_id(g);

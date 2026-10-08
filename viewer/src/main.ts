@@ -4,6 +4,7 @@ import EditorWorker from 'monaco-editor/editor/editor.worker.js?worker';
 import { byteToUtf16 } from './positions';
 import { graphView } from './graph-view';
 import { examplePicker } from './examples';
+import { workspaceView } from './workspace-view';
 import type { AnalysisResponse, AnalysisView, Example, SourceRange } from './types';
 import './style.css';
 
@@ -12,15 +13,16 @@ document.querySelector<HTMLDivElement>('#app')!.innerHTML = `
   <header>
     <div class="brand"><span class="logo">C#</span><div><h1>Syntax Lab</h1><p>Исследуйте структуру метода</p></div></div>
     <div class="header-controls">
-      <div class="example-control"><span>Пример</span><button id="examples" aria-label="Выбрать пример" aria-haspopup="dialog" aria-controls="example-picker" aria-expanded="false">Загрузка примеров…</button></div>
+      <div id="example-control" class="example-control"><span>Пример</span><button id="examples" aria-label="Выбрать пример" aria-haspopup="dialog" aria-controls="example-picker" aria-expanded="false">Загрузка примеров…</button></div>
     </div>
   </header>
-  <main>
-    <section class="pane source-pane" aria-label="Исходный код">
-      <div class="pane-header"><h2>Метод C#</h2><span class="badge">LIVE</span></div>
+  <main id="workspace">
+    <section id="source-pane" class="pane source-pane" aria-label="Исходный код">
+      <div class="pane-header"><h2>Метод C#</h2><div id="fullscreen-examples"></div><span class="badge">LIVE</span></div>
       <div id="editor"></div>
       <div class="hint">Сигнатура и тело одного метода · изменения применяются автоматически</div>
     </section>
+    <div id="pane-divider" role="separator" tabindex="0" aria-label="Ширина редактора" aria-orientation="vertical" aria-controls="source-pane" aria-valuemin="15" aria-valuemax="70" aria-valuenow="35" title="Перетащите или используйте стрелки влево и вправо"></div>
     <section id="graph-pane" class="pane graph-pane" aria-label="Синтаксическое дерево">
       <div class="pane-header graph-header"><div id="view" class="segmented" role="group" aria-label="Модель графа">
         <button data-view="cfg" aria-pressed="false" title="Граф потока управления">CFG</button>
@@ -38,14 +40,14 @@ document.querySelector<HTMLDivElement>('#app')!.innerHTML = `
       <div id="viewport"><div id="graph"><p class="placeholder">Дерево появится после разбора метода</p></div></div>
       <div class="hint">Колесо — масштаб · перетаскивание — перемещение · нажатие на узел — код</div>
     </section>
-  </main>
-  <footer><h2>Диагностика <span id="error-count">0</span></h2><ul id="diagnostics"><li class="muted">Ошибок нет</li></ul></footer>
   <dialog id="example-picker" aria-labelledby="examples-title">
     <div class="picker-header"><h2 id="examples-title">Выбрать пример</h2><button id="close-examples" aria-label="Закрыть примеры">✕</button></div>
     <label for="example-search">Поиск по названию, конструкции или коду</label>
     <input id="example-search" type="search" placeholder="for, while, return, ранний выход…" autocomplete="off">
     <p id="example-count" role="status"></p><div id="example-tree"></div>
-  </dialog>`;
+  </dialog>
+  </main>
+  <footer><h2>Диагностика <span id="error-count">0</span></h2><ul id="diagnostics"><li class="muted">Ошибок нет</li></ul></footer>`;
 const element = <T extends HTMLElement>(id: string) => document.getElementById(id)! as T;
 const editor = monaco.editor.create(element('editor'), {
   language: 'csharp', value: '', theme: 'vs', automaticLayout: true,
@@ -210,28 +212,10 @@ element('zoom-in').onclick = () => navigation.zoomAt(1.3);
 element('zoom-out').onclick = () => navigation.zoomAt(1 / 1.3);
 element('fit').onclick = navigation.fit;
 element('refresh').onclick = () => schedule(0);
-const graphPane = element('graph-pane');
-const fullscreen = element<HTMLButtonElement>('fullscreen');
-function updateFullscreen() {
-  const active = document.fullscreenElement === graphPane || graphPane.classList.contains('expanded');
-  fullscreen.setAttribute('aria-pressed', String(active));
-  fullscreen.title = active ? 'Выйти из полного экрана' : 'На весь экран';
-  fullscreen.setAttribute('aria-label', fullscreen.title);
-}
-fullscreen.onclick = async () => {
-  if (document.fullscreenElement === graphPane) await document.exitFullscreen();
-  else if (graphPane.classList.contains('expanded')) graphPane.classList.remove('expanded');
-  else {
-    try { await graphPane.requestFullscreen(); }
-    catch { graphPane.classList.add('expanded'); }
-  }
-  updateFullscreen();
-};
-document.addEventListener('fullscreenchange', updateFullscreen);
-document.addEventListener('keydown', event => {
-  if (event.key === 'Escape' && graphPane.classList.contains('expanded')) {
-    graphPane.classList.remove('expanded'); updateFullscreen(); fullscreen.focus();
-  }
+const exampleControl = element('example-control');
+const exampleHome = exampleControl.parentElement!;
+workspaceView(element('workspace'), element('pane-divider'), element<HTMLButtonElement>('fullscreen'), active => {
+  (active ? element('fullscreen-examples') : exampleHome).append(exampleControl);
 });
 function download(name: string, text: string, type: string) {
   const url = URL.createObjectURL(new Blob([text], { type }));

@@ -76,6 +76,29 @@ void unicode() {
     auto json = lab::syntax_json(parsed.method->root());
     check(!json.dump().empty(), "Invalid JSON UTF-8");
 }
+void graph_presentation() {
+    // Presentation-only fixtures: these do not exercise CFG/SSA construction.
+    lab::Graph graph{{
+        {"c", "condition", "ready", std::nullopt},
+        {"s", "expression_statement", "Work();", std::nullopt},
+        {"e", "binary_expression", "x + 1", std::nullopt}
+    }, {{"c", "s", "true"}}};
+    check(graph.edges.front().color == lab::GraphEdgeColor::Default, "Three-field edge lost its default color");
+    auto dot = lab::to_dot(graph);
+    check(dot.find("label=\"ready\", shape=diamond, style=filled") != std::string::npos, "Condition is not a diamond");
+    check(dot.find("label=\"Work();\", shape=box, style=filled") != std::string::npos, "Statement is not rectangular");
+    check(dot.find("label=\"x + 1\"]") != std::string::npos, "Syntax expression was guessed to be a condition");
+    check(dot.find("\"c\" -> \"s\" [label=\"true\"]") != std::string::npos, "Default color was inferred from label");
+    const std::vector<std::pair<lab::GraphEdgeColor, std::string>> colors{
+        {lab::GraphEdgeColor::Green, "#16a34a"}, {lab::GraphEdgeColor::Red, "#dc2626"},
+        {lab::GraphEdgeColor::Orange, "#ea580c"}, {lab::GraphEdgeColor::Blue, "#2563eb"}
+    };
+    for (const auto& [color, hex] : colors) {
+        graph.edges.front() = {"c", "s", "custom", color};
+        dot = lab::to_dot(graph);
+        check(dot.find("color=\"" + hex + "\", fontcolor=\"" + hex + "\"") != std::string::npos, "Edge/label color missing");
+    }
+}
 void protocol() {
     auto request = nlohmann::json{{"protocolVersion", 1}, {"requestId", 42}, {"source", "int F() { return 1; }"}, {"view", "syntax"}};
     auto response = lab::handle_request(request);
@@ -116,7 +139,7 @@ void protocol() {
 int main(int argc, char** argv) {
     try {
         check(argc == 2, "Expected example directory");
-        examples(argv[1]); invalid(); unicode(); protocol();
+        examples(argv[1]); invalid(); unicode(); graph_presentation(); protocol();
         std::cout << "All core tests passed.\n";
         return 0;
     } catch (const std::exception& e) { std::cerr << e.what() << '\n'; return 1; }

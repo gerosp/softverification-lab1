@@ -4,6 +4,15 @@
 #include <unordered_set>
 namespace lab {
 namespace {
+std::string_view edge_color(GraphEdgeColor color) {
+    switch (color) {
+    case GraphEdgeColor::Green: return "#16a34a";
+    case GraphEdgeColor::Red: return "#dc2626";
+    case GraphEdgeColor::Orange: return "#ea580c";
+    case GraphEdgeColor::Blue: return "#2563eb";
+    default: return "#64748b";
+    }
+}
 std::string dot_quote(std::string_view text) {
     std::string out = "\"";
     for (unsigned char c : text) {
@@ -60,10 +69,18 @@ std::string to_dot(const Graph& graph, std::string_view name) {
     out << "digraph " << dot_quote(name) << " {\n  graph [rankdir=TB, bgcolor=\"transparent\", nodesep=0.25, ranksep=0.45];\n"
            "  node [shape=box, style=\"rounded,filled\", fillcolor=\"#eef2ff\", color=\"#818cf8\", fontname=\"Arial\", fontsize=11];\n"
            "  edge [color=\"#64748b\", fontname=\"Arial\", fontsize=10];\n";
-    for (const auto& n : graph.nodes)
-        out << "  " << dot_quote(n.id) << " [id=" << dot_quote(n.id) << ", label=" << dot_quote(n.label) << "];\n";
-    for (const auto& e : graph.edges)
-        out << "  " << dot_quote(e.from) << " -> " << dot_quote(e.to) << " [label=" << dot_quote(e.label) << "];\n";
+    for (const auto& n : graph.nodes) {
+        out << "  " << dot_quote(n.id) << " [id=" << dot_quote(n.id) << ", label=" << dot_quote(n.label);
+        if (n.kind == "condition") out << ", shape=diamond, style=filled";
+        else if (n.kind.ends_with("_statement")) out << ", shape=box, style=filled";
+        out << "];\n";
+    }
+    for (const auto& e : graph.edges) {
+        out << "  " << dot_quote(e.from) << " -> " << dot_quote(e.to) << " [label=" << dot_quote(e.label);
+        if (e.color != GraphEdgeColor::Default)
+            out << ", color=" << dot_quote(edge_color(e.color)) << ", fontcolor=" << dot_quote(edge_color(e.color));
+        out << "];\n";
+    }
     return out.str() + "}\n";
 }
 nlohmann::json syntax_json(SyntaxNode n, unsigned depth) {

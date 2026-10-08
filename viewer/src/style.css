@@ -38,9 +38,22 @@ h2 { font-size: 12px; margin: 0; font-weight: 650; }
 #graph g.node { cursor: pointer; }
 #graph g.node:hover polygon, #graph g.node:hover path { fill: #dbeafe; stroke: #4338ca; }
 .placeholder { font-size: 13px; color: #94a3b8; padding: 20px; }
-.graph-pane:fullscreen, .graph-pane.expanded { width: 100vw; height: 100dvh; border-radius: 0; background: white; }
-.graph-pane.expanded { position: fixed; inset: 0; z-index: 100; }
+#pane-divider { display: none; }
+#workspace:fullscreen, #workspace.expanded { width: 100vw; height: 100dvh; min-height: 0; grid-template-columns: var(--source-width, 35%) 10px minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); gap: 0; background: #f4f6fb; }
+#workspace.expanded { position: fixed; inset: 0; z-index: 100; }
+#workspace:fullscreen > .pane, #workspace.expanded > .pane { height: auto; min-height: 0; border-radius: 0; }
+#workspace:fullscreen #editor, #workspace.expanded #editor { min-height: 0; }
+#workspace:fullscreen #pane-divider, #workspace.expanded #pane-divider { display: block; cursor: col-resize; touch-action: none; background: linear-gradient(#cbd5e1, #cbd5e1) center / 2px 40px no-repeat; }
+#pane-divider:hover, #pane-divider:focus-visible { background-color: #e0e7ff !important; outline: 2px solid #6366f1; outline-offset: -2px; }
+#workspace.resizing { cursor: col-resize; user-select: none; }
+#workspace.resizing > .pane { pointer-events: none; }
 #examples { max-width: min(520px, 70vw); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 9px 12px; text-align: left; }
+#fullscreen-examples { display: none; }
+#fullscreen-examples:not(:empty) { display: block; flex: 1; min-width: 0; }
+#fullscreen-examples .example-control { min-width: 0; }
+#fullscreen-examples .example-control > span { display: none; }
+#fullscreen-examples #examples { width: 100%; min-width: 0; padding: 6px 8px; }
+.source-pane .pane-header h2, .source-pane .badge { flex-shrink: 0; }
 #example-picker { width: min(720px, calc(100vw - 32px)); max-height: 85dvh; padding: 22px; border: 1px solid #dbe1ed; border-radius: 14px; color: #334155; box-shadow: 0 20px 80px #0f172a33; }
 #example-picker::backdrop { background: #0f172a66; }
 .picker-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 18px; }

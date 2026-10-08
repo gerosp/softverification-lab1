@@ -185,20 +185,105 @@ test('wheel zoom anchors at the cursor, dragging pans without selecting, and fit
   await expect(page.locator('.monaco-editor .selected-text').first()).toBeVisible();
 });
 
-test('fullscreen expands the graph and exits, including the browser fallback', async ({ page }) => {
+test('fullscreen shows code and graph with a resizable divider, including the browser fallback', async ({ page }) => {
+  await page.goto('/'); await ready(page);
+  const normalHeight = (await page.locator('#viewport').boundingBox()).height;
+  await page.getByRole('button', { name: 'На весь экран', exact: true }).click();
+  await expect(page.locator('#fullscreen')).toHaveAttribute('aria-pressed', 'true');
+  const workspace = page.locator('#workspace');
+  const source = page.locator('#source-pane');
+  const graph = page.locator('#graph-pane');
+  const divider = page.getByRole('separator', { name: 'Ширина редактора' });
+  await expect.poll(async () => (await workspace.boundingBox()).width).toBe(1440);
+  await expect(source).toBeVisible();
+  await expect(divider).toBeVisible();
+  const sourceBox = await source.boundingBox();
+  const graphBox = await graph.boundingBox();
+  expect(sourceBox.y).toBe(graphBox.y);
+  expect(sourceBox.height).toBe(1000);
+  expect(graphBox.height).toBe(1000);
+  expect(sourceBox.x + sourceBox.width).toBeLessThan(graphBox.x);
+  expect((await page.locator('#viewport').boundingBox()).height).toBeGreaterThan(normalHeight);
+  const handle = await divider.boundingBox();
+  await page.mouse.move(handle.x + handle.width / 2, handle.y + handle.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(handle.x + handle.width / 2 - 150, handle.y + handle.height / 2, { steps: 8 });
+  await page.mouse.up();
+  expect((await source.boundingBox()).width).toBeCloseTo(sourceBox.width - 150, 0);
+  expect((await graph.boundingBox()).width).toBeCloseTo(graphBox.width + 150, 0);
+  await divider.press('Home');
+  await expect(divider).toHaveAttribute('aria-valuenow', '15');
+  await divider.press('ArrowRight');
+  await expect(divider).toHaveAttribute('aria-valuenow', '17');
+  await divider.press('End');
+  await expect(divider).toHaveAttribute('aria-valuenow', '70');
+  await replaceSource(page, 'int F() { return 42; }'); await ready(page);
+  await expect(page.locator('#graph')).toContainText('42');
+  await page.getByRole('button', { name: 'Выйти из полного экрана' }).click();
+  await expect(page.locator('#fullscreen')).toHaveAttribute('aria-pressed', 'false');
+  await expect(divider).toBeHidden();
+  await page.evaluate(() => { document.getElementById('workspace').requestFullscreen = () => Promise.reject(new Error('Unavailable')); });
+  await page.getByRole('button', { name: 'На весь экран', exact: true }).click();
+  await expect(workspace).toHaveClass(/expanded/);
+  await expect(source).toBeVisible();
+  await divider.focus();
+  await divider.press('Home');
+  await expect(divider).toHaveAttribute('aria-valuenow', '15');
+  await page.screenshot({ path: 'test-results/fullscreen.png' });
+  await page.keyboard.press('Escape');
+  await expect(workspace).not.toHaveClass(/expanded/);
+  await expect(page.locator('#fullscreen')).toHaveAttribute('aria-pressed', 'false');
+});
+
+test('fullscreen keeps both panes side by side on a narrow viewport', async ({ page }) => {
+  await page.setViewportSize({ width: 800, height: 600 });
   await page.goto('/'); await ready(page);
   await page.getByRole('button', { name: 'На весь экран', exact: true }).click();
   await expect(page.locator('#fullscreen')).toHaveAttribute('aria-pressed', 'true');
-  await expect.poll(async () => (await page.locator('#graph-pane').boundingBox()).width).toBe(1440);
+  const source = await page.locator('#source-pane').boundingBox();
+  const graph = await page.locator('#graph-pane').boundingBox();
+  expect(source.y).toBe(0);
+  expect(graph.y).toBe(0);
+  expect(source.height).toBe(600);
+  expect(graph.height).toBe(600);
+  expect(source.x + source.width).toBeLessThan(graph.x);
+  await expect(page.locator('#pane-divider')).toBeVisible();
   await page.getByRole('button', { name: 'Выйти из полного экрана' }).click();
-  await expect(page.locator('#fullscreen')).toHaveAttribute('aria-pressed', 'false');
-  await page.evaluate(() => { document.getElementById('graph-pane').requestFullscreen = () => Promise.reject(new Error('Unavailable')); });
-  await page.getByRole('button', { name: 'На весь экран', exact: true }).click();
-  await expect(page.locator('#graph-pane')).toHaveClass(/expanded/);
-  await page.keyboard.press('Escape');
-  await expect(page.locator('#graph-pane')).not.toHaveClass(/expanded/);
-  await expect(page.locator('#fullscreen')).toHaveAttribute('aria-pressed', 'false');
+  await expect(page.locator('#pane-divider')).toBeHidden();
 });
+
+for (const fallback of [false, true]) {
+  test(`example picker opens over both fullscreen panes (${fallback ? 'fallback' : 'native'})`, async ({ page }) => {
+    await page.goto('/'); await ready(page);
+    if (fallback) {
+      await page.evaluate(() => { document.getElementById('workspace').requestFullscreen = () => Promise.reject(new Error('Unavailable')); });
+    }
+    await page.getByRole('button', { name: 'На весь экран', exact: true }).click();
+    const trigger = page.locator('#source-pane #examples');
+    await expect(trigger).toBeVisible();
+    await trigger.click();
+    const dialog = page.getByRole('dialog', { name: 'Выбрать пример' });
+    await expect(dialog).toBeVisible();
+    expect(await dialog.evaluate(el => el.matches(':modal') && el.closest('#workspace') !== null)).toBe(true);
+    const popup = await dialog.boundingBox();
+    const graph = await page.locator('#graph-pane').boundingBox();
+    expect(popup.x).toBeLessThan(graph.x);
+    expect(popup.x + popup.width).toBeGreaterThan(graph.x);
+    await page.locator('#example-search').fill('05-for.cs');
+    await page.locator('[data-example-id="05-for.cs"]').click(); await ready(page);
+    await expect(dialog).not.toBeVisible();
+    await expect(trigger).toContainText('05-for.cs');
+    await expect(page.locator('#graph g.node text').filter({ hasText: /^for_statement$/ })).toHaveCount(1);
+    await expect(page.locator('#fullscreen')).toHaveAttribute('aria-pressed', 'true');
+    await trigger.click();
+    await page.locator('#example-search').press('Escape');
+    await expect(dialog).not.toBeVisible();
+    await expect(page.locator('#fullscreen')).toHaveAttribute('aria-pressed', 'true');
+    await page.getByRole('button', { name: 'Выйти из полного экрана' }).click();
+    await expect(page.locator('header #examples')).toContainText('05-for.cs');
+    await expect(page.locator('#fullscreen-examples')).toBeHidden();
+  });
+}
 
 test('refresh retries unchanged source after backend failure and SSA reports its scaffold', async ({ page }) => {
   await page.goto('/'); await ready(page);
