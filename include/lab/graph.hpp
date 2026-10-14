@@ -7,6 +7,7 @@ struct GraphNode {
     std::string kind; // Use "condition" for a diamond in DOT output.
     std::string label;
     std::optional<SourceRange> range;
+    std::optional<SyntaxNode> syntax_node;
 };
 enum class GraphEdgeColor { Default, Green, Red, Orange, Blue };
 struct GraphEdge {

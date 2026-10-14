@@ -21,23 +21,30 @@ namespace lab
 
     struct IfBlock
     {
-        const SyntaxNode& condition;
-        const SyntaxNode& consequence;
-        const SyntaxNode& alternative;
+        const SyntaxNode &condition;
+        const SyntaxNode &consequence;
+        const SyntaxNode &alternative;
         const GraphNode phi;
         GraphNode end;
         IfState state;
     };
-    struct LoopControl{
+    struct LoopControl
+    {
         std::string kind;
         std::vector<std::string> from;
     };
-
-    struct NodeResult{
-        std::vector<std::string> outs;
-        std::vector<LoopControl> lc;
-
+    struct ParentEdge
+    {
+        std::string id;
+        std::string comment = "";
+        GraphEdgeColor color = GraphEdgeColor::Default;
     };
+    struct NodeResult
+    {
+        std::vector<ParentEdge> outs;
+        std::vector<LoopControl> lc;
+    };
+
     // Precondition: method comes from a ParseResult with ok() == true.
     // Success: graph has a value and diagnostics is empty.
     // Failure: graph is nullopt and diagnostics explains unsupported input, etc.

@@ -15,21 +15,28 @@ namespace lab
     // The student implementation may introduce blocks, symbols, and versions later.
     // Success: an owned graph and no diagnostics. Failure: nullopt and diagnostics.
     SsaResult build_ssa(const ParsedMethod &method, const Graph &cfg);
+
+    class Variable
+    {
+    public:
+        std::size_t version;
+        std::string name;
+        std::string type;
+        std::string to_string()
+        {
+            return name + "." + std::to_string(version);
+        }
+    };
+    class VariableRegistry
+    {
+    private:
+        std::unordered_map<std::string, Variable> variables;
+
+    public:
+        Variable get_variable(std::string name);
+        std::size_t get_version(std::string name);
+        Variable create_variable(std::string name, std::string type = "");
+        Variable get_and_inc_variable(std::string name);
+    };
+
 } // namespace lab
-
-struct Variable
-{
-    std::size_t version;
-    std::string name;
-    std::string type;
-};
-class VariableRegistry
-{
-private:
-    std::unordered_map<std::string, Variable> variables;
-
-public:
-    Variable get_variable(std::string name);
-    std::size_t get_version(std::string name);
-    Variable create_variable(std::string name);
-};
