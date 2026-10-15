@@ -37,7 +37,7 @@ namespace lab
     public:
         Variable get_variable(std::string name);
         std::size_t get_version(std::string name);
-        void set_version(std::string name, std::size_t version);
+        void set_version(std::string name, std::size_t version, std::string node);
         Variable create_variable(std::string name, std::string node, std::string type = "");
         Variable get_and_inc_variable(std::string name, std::string node);
         std::vector<std::pair<Variable, Variable>> get_conflicting_variables(VariableRegistry &other);
@@ -47,7 +47,8 @@ namespace lab
     {
         // 1. Our vr
         VariableRegistry vr;
-
+        // Variable being merged
+        Variable var;
         // 2. Parent for the phi node
         NodeResult p;
         // 3. Successor for the phi node (do ourselves from g.edges)

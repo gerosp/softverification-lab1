@@ -89,10 +89,11 @@ namespace lab
         }
     }
 
-    NodeResult create_phi_node(VariableRegistry &vr, Graph &g, std::vector<Variable> &v, GraphNode &n, NodeResult p)
+    NodeResult create_phi_node(VariableRegistry &gvr, VariableRegistry &lvr, Graph &g, std::vector<Variable> &v, GraphNode &n, NodeResult p)
     {
         std::string id = get_next_id(g);
-        Variable newvar = vr.get_and_inc_variable(v[0].name, id);
+        Variable newvar = gvr.get_and_inc_variable(v[0].name, id);
+        lvr.set_version(newvar.name, newvar.version, newvar.created_at);
         std::string text = newvar.to_string() + " = phi (";
         for (auto &var : v)
         {
@@ -156,24 +157,35 @@ namespace lab
             {
                 // Find different variables
                 std::vector<std::string> pending_phi_ids;
-                VariableRegistry pvr = vars[preds[n.id][0].id];
+                std::optional<VariableRegistry> pvr;
+                if (vars.contains(preds[n.id][0].id))
+                {
+                    pvr = vars[preds[n.id][0].id];
+                }
                 std::unordered_map<std::string, std::vector<Variable>> diff_vars;
                 for (const auto &pred : preds[n.id])
                 {
                     // TODO: It is possible to lose a conflict if the first pvr does not contain the conflicting variable
-                    if (vars.contains(pred.id) || !visited.contains(preds[n.id][0].id))
+                    if (vars.contains(pred.id) && pvr.has_value())
                     {
-                        const auto variables = pvr.get_conflicting_variables(vars[pred.id]);
-
+                        const auto variables = pvr.value().get_conflicting_variables(vars[pred.id]);
                         for (const auto &v : variables)
                         {
                             if (!diff_vars.contains(v.first.name))
                             {
-                                diff_vars[v.first.name] = {v.first, v.second};
+                                diff_vars[v.first.name] = {};
+                                for (const auto &pr : preds[n.id])
+                                {
+                                    if (vars.contains(pr.id))
+                                    {
+                                        diff_vars[v.first.name].push_back(vars[pr.id].get_variable(v.first.name));
+                                    }
+                                }
+                                // diff_vars[v.first.name] = {v.first, v.second};
                             }
                             else
                             {
-                                diff_vars[v.first.name].push_back(v.second);
+                                // diff_vars[v.first.name].push_back(v.second);
                             }
                         }
                     }
@@ -224,7 +236,7 @@ namespace lab
                     // ssa.diagnostics.push_back(Diagnostic{"ssa_dbg", "Conflict size: " + std::to_string(conflicts.size()), n.range.value_or(SourceRange{})});
 
                     // Chain phi nodes one after the other
-                    p = create_phi_node(vr, g, conflicts, n, p);
+                    p = create_phi_node(vr, lvr, g, conflicts, n, p);
                     if (created_node_id == "")
                         created_node_id = p.outs[0].id;
                 }
@@ -232,11 +244,11 @@ namespace lab
                 {
                     if (pending_phis.contains(id))
                     {
-                        pending_phis[id].push_back(PendingPhi{pvr, p, n});
+                        pending_phis[id].push_back(PendingPhi{pvr.value(), p, n});
                     }
                     else
                     {
-                        pending_phis[id] = {PendingPhi{pvr, p, n}};
+                        pending_phis[id] = {PendingPhi{pvr.value(), p, n}};
                     }
                 }
                 if (pending_edges.contains(n.id))
@@ -293,10 +305,11 @@ namespace lab
                 auto rest = variable_declarator.value().child(2); // Assume name (0) = (1) *expr* (2)
                 std::string id = "n" + std::to_string(g.nodes.size());
 
-                Variable var = vr.create_variable(name, id, type);
+                vr.create_variable(name, id, type);
+                Variable var = lvr.create_variable(name, id, type);
 
                 // text = var.to_string() + " = " + std::string(rest.text());
-                text = var.to_string() + " = " + replace_identifiers(vr, rest);
+                text = var.to_string() + " = " + replace_identifiers(lvr, rest);
 
                 g.nodes.push_back(GraphNode{id, n.kind, text, n.range, n.syntax_node});
                 for (const auto &edge : p.outs)
@@ -340,15 +353,18 @@ namespace lab
                         return NodeResult{};
                     }
                     std::string identifier = std::string(postfix_expression.value().child(0).text());
-                    vr.get_and_inc_variable(identifier, n.id);
-                    text = replace_identifiers(vr, n.syntax_node.value());
+                    const auto &v = vr.get_and_inc_variable(identifier, n.id);
+                    lvr.set_version(v.name, v.version, n.id);
+                    text = replace_identifiers(lvr, n.syntax_node.value());
                 }
                 else // It is an assignment
                 {
                     // Assumes left is identifier
                     std::string dest = std::string(assignment_expression.value().field("left").text());
-                    std::string right = replace_identifiers(vr, assignment_expression.value().field("right"));
-                    text = vr.get_and_inc_variable(dest, id).to_string() + "=" + right;
+                    std::string right = replace_identifiers(lvr, assignment_expression.value().field("right"));
+                    const auto &v = vr.get_and_inc_variable(dest, n.id);
+                    lvr.set_version(v.name, v.version, n.id);
+                    text = lvr.get_variable(dest).to_string() + "=" + right;
                 }
                 g.nodes.push_back(GraphNode{id, n.kind, text, n.range, n.syntax_node});
                 for (const auto &edge : p.outs)
@@ -382,10 +398,11 @@ namespace lab
                 // Assumes left is identifier
                 std::string dest = std::string(assignment_expression.field("left").text());
                 std::string text;
-                std::string right = replace_identifiers(vr, assignment_expression.field("right"));
+                std::string right = replace_identifiers(lvr, assignment_expression.field("right"));
                 std::string id = "n" + std::to_string(g.nodes.size());
-
-                text = vr.get_and_inc_variable(dest, id).to_string() + "=" + right;
+                const auto v = vr.get_and_inc_variable(dest, id);
+                lvr.set_version(dest, v.version, id);
+                text = lvr.get_variable(dest).to_string() + "=" + right;
                 g.nodes.push_back(GraphNode{id, n.kind, text, n.range, n.syntax_node});
                 for (const auto &edge : p.outs)
                 {
@@ -407,7 +424,7 @@ namespace lab
                 std::string text = " ";
                 for (const auto &child : n.syntax_node.value().children())
                 {
-                    text += replace_identifiers(vr, child) + " ";
+                    text += replace_identifiers(lvr, child) + " ";
                 }
                 g.nodes.push_back(GraphNode{id, n.kind, text, n.range, n.syntax_node});
                 for (const auto &edge : p.outs)
@@ -427,7 +444,7 @@ namespace lab
 
                     return NodeResult{{}, {}};
                 }
-                std::string text = replace_identifiers(vr, n.syntax_node.value());
+                std::string text = replace_identifiers(lvr, n.syntax_node.value());
                 g.nodes.push_back(GraphNode{id, n.kind, text, n.range, n.syntax_node});
                 for (const auto &edge : p.outs)
                 {
@@ -453,7 +470,7 @@ namespace lab
                 // }
                 // return NodeResult{prev_id.outs, lcs};
             }
-            vars[n.id] = vr;
+            vars[n.id] = lvr;
 
             // if (!p.outs.empty())
             //     cfg2ssa[n.id] = p.outs[0].id; // Ideally that would be just newly created node id
@@ -494,7 +511,7 @@ namespace lab
                     {
                         // ssa.diagnostics.push_back(Diagnostic{"Found next node:", to.value().kind + "", n.range.value_or(SourceRange{})});
                         if (!visited.contains(to.value().id))
-                            visit(to.value(), new_parent, depth + 1);
+                            visit(to.value(), new_parent, depth + 1, lvr);
                         else
                         {
                             if (cfg2ssa.contains(edge.to))
@@ -552,9 +569,10 @@ namespace lab
         variables[name].created_at = node;
         return variables[name];
     }
-    void VariableRegistry::set_version(std::string name, std::size_t version)
+    void VariableRegistry::set_version(std::string name, std::size_t version, std::string node)
     {
         variables[name].version = version;
+        variables[name].created_at = node;
     }
     std::vector<std::pair<Variable, Variable>> VariableRegistry::get_conflicting_variables(VariableRegistry &other)
     {
