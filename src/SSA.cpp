@@ -56,7 +56,8 @@ namespace lab
     {
         for (const auto &param : n.field("parameters").children())
         {
-            vr.create_variable(std::string(param.field("name").text()), std::string(param.field("type").text()));
+            if (param.field("name").kind() == "identifier")
+                vr.create_variable(std::string(param.field("name").text()), std::string(param.field("type").text()));
         }
     }
     void build_dependencies(std::unordered_map<std::string, std::vector<GraphNode>> &preds, std::unordered_map<std::string, std::vector<GraphNode>> &succs, const Graph &g)
@@ -88,11 +89,29 @@ namespace lab
             }
         }
     }
+    void update_phi_node(Graph &g, std::string id, PendingPhi &phi)
+    {
+        for (auto &node : g.nodes)
+        {
+            if (node.id == id)
+            {
+                std::string text = phi.vr.get_variable(phi.var).to_string() + " = phi (";
 
-    NodeResult create_phi_node(VariableRegistry &gvr, VariableRegistry &lvr, Graph &g, std::vector<Variable> &v, GraphNode &n, NodeResult p)
+                for (auto &[dep, var] : phi.deps)
+                {
+                    text += var.to_string();
+                    {
+                        text += ", ";
+                    }
+                }
+                node.label = text + ")";
+            }
+        }
+    }
+    NodeResult create_phi_node(VariableRegistry &gvr, VariableRegistry &lvr, Graph &g, std::vector<Variable> &v, GraphNode &n, NodeResult p, std::string name)
     {
         std::string id = get_next_id(g);
-        Variable newvar = gvr.get_and_inc_variable(v[0].name, id);
+        Variable newvar = gvr.get_and_inc_variable(name, id);
         lvr.set_version(newvar.name, newvar.version, newvar.created_at);
         std::string text = newvar.to_string() + " = phi (";
         for (auto &var : v)
@@ -130,9 +149,9 @@ namespace lab
         std::unordered_map<std::string, std::vector<GraphNode>> succs;
         std::unordered_map<std::string, VariableRegistry> vars;
         std::unordered_map<std::string, std::string> cfg2ssa;
-        std::unordered_map<std::string, std::vector<PendingPhi>> pending_phis;
+        std::unordered_map<std::string, std::vector<std::string>> phi_watchers;
         std::unordered_map<std::string, std::vector<ParentEdge>> pending_edges; // CFG id to SSA id
-
+        std::unordered_map<std::string, PendingPhi> pending_phis;
         build_dependencies(preds, succs, cfg);
         parse_arguments(vr, method.root());
         GraphNode start;
@@ -163,6 +182,7 @@ namespace lab
                     pvr = vars[preds[n.id][0].id];
                 }
                 std::unordered_map<std::string, std::vector<Variable>> diff_vars;
+                bool is_pending = false;
                 for (const auto &pred : preds[n.id])
                 {
                     // TODO: It is possible to lose a conflict if the first pvr does not contain the conflicting variable
@@ -191,7 +211,10 @@ namespace lab
                     }
                     else
                     {
-                        pending_phi_ids.push_back(pred.id);
+                        // pending_phi_ids.push_back(pred.id);
+                        is_pending = true;
+                        break;
+
                         // We cannot judge about if there is a conflict now
                         // When this node is actually visited, we want it to:
                         // compare its own varreg with whatever we had here
@@ -213,16 +236,16 @@ namespace lab
                         // Alternative idea:
 
                         // Cannot go further until we come here again, but this time when everything is evaluated
-                        visited.erase(n.id); // Will break on self-edges and loops(?)
-                        if (pending_edges.contains(n.id))
-                        {
-                            pending_edges[n.id].push_back(p.outs[0]);
-                        }
-                        else
-                        {
-                            pending_edges[n.id] = p.outs;
-                        }
-                        return NodeResult{};
+                        // visited.erase(n.id); // Will break on self-edges and loops(?)
+                        // if (pending_edges.contains(n.id))
+                        // {
+                        //     pending_edges[n.id].push_back(p.outs[0]);
+                        // }
+                        // else
+                        // {
+                        //     pending_edges[n.id] = p.outs;
+                        // }
+                        // return NodeResult{};
 
                         // BUT: if there is an actual loop in the cfg... like... a loop.. you know
                         // We will never return there (at least with visited preds)
@@ -230,37 +253,81 @@ namespace lab
                         // ssa.diagnostics.push_back(Diagnostic{"ssa_dbg", "Encountered missing vars", n.range.value_or(SourceRange{})});
                     }
                 }
-
-                for (auto &[name, conflicts] : diff_vars)
+                if (!is_pending)
                 {
-                    // ssa.diagnostics.push_back(Diagnostic{"ssa_dbg", "Conflict size: " + std::to_string(conflicts.size()), n.range.value_or(SourceRange{})});
 
-                    // Chain phi nodes one after the other
-                    p = create_phi_node(vr, lvr, g, conflicts, n, p);
-                    if (created_node_id == "")
-                        created_node_id = p.outs[0].id;
-                }
-                for (const auto &id : pending_phi_ids)
-                {
-                    if (pending_phis.contains(id))
+                    for (auto &[name, conflicts] : diff_vars)
                     {
-                        pending_phis[id].push_back(PendingPhi{pvr.value(), p, n});
-                    }
-                    else
-                    {
-                        pending_phis[id] = {PendingPhi{pvr.value(), p, n}};
+                        // ssa.diagnostics.push_back(Diagnostic{"ssa_dbg", "Conflict size: " + std::to_string(conflicts.size()), n.range.value_or(SourceRange{})});
+
+                        // Chain phi nodes one after the other
+
+                        p = create_phi_node(vr, lvr, g, conflicts, n, p, name);
+                        if (created_node_id == "")
+                            created_node_id = p.outs[0].id;
                     }
                 }
-                if (pending_edges.contains(n.id))
+                else
                 {
-                    for (const auto &e : pending_edges[n.id])
+                    for (auto &[name, var] : lvr.variables)
                     {
-                        if (created_node_id != "")
+                        std::unordered_map<std::string, Variable> deps;
+
+                        std::vector<Variable> conflicts;
+                        for (const auto &pred : preds[n.id])
                         {
-                            g.edges.push_back(GraphEdge{e.id, created_node_id, e.comment, e.color});
+                            if (vars.contains(pred.id))
+                            {
+                                conflicts.push_back(vars[pred.id].get_variable(name));
+                                deps[pred.id] = vars[pred.id].get_variable(name);
+                            }
+                            else
+                            {
+                                Variable v{1, "temp", "", ""};
+                                conflicts.push_back(v); // TODO: proper variable
+                                deps[pred.id] = v;
+                            }
+                        }
+                        p = create_phi_node(vr, lvr, g, conflicts, n, p, name);
+                        if (created_node_id == "")
+                            created_node_id = p.outs[0].id;
+
+                        pending_phis[p.outs[0].id] = PendingPhi{
+                            lvr,
+                            name,
+                            p,
+                            n,
+                            deps};
+                        for (const auto &pred : preds[n.id])
+                        {
+                            if (!vars.contains(pred.id))
+                                phi_watchers[pred.id].push_back(p.outs[0].id);
                         }
                     }
                 }
+
+                // for (const auto &id : pending_phi_ids)
+                // {
+                //     if (pending_phis.contains(id))
+                //     {
+                //         // pending_phis[id].push_back(PendingPhi{lvr, p, n});
+                //     }
+                //     else
+                //     {
+                //         // pending_phis[id] = {PendingPhi{lvr, p, n}};
+                //     }
+                // }
+
+                // if (pending_edges.contains(n.id))
+                // {
+                //     for (const auto &e : pending_edges[n.id])
+                //     {
+                //         if (created_node_id != "")
+                //         {
+                //             g.edges.push_back(GraphEdge{e.id, created_node_id, e.comment, e.color});
+                //         }
+                //     }
+                // }
             }
             NodeResult new_parent = p;
 
@@ -355,7 +422,7 @@ namespace lab
                     std::string identifier = std::string(postfix_expression.value().child(0).text());
                     const auto &v = vr.get_and_inc_variable(identifier, n.id);
                     lvr.set_version(v.name, v.version, n.id);
-                    text = replace_identifiers(lvr, n.syntax_node.value());
+                    text = replace_identifiers(lvr, postfix_expression.value());
                 }
                 else // It is an assignment
                 {
@@ -479,6 +546,16 @@ namespace lab
             // IDK if we need SSA link for every CFG node...
             if (created_node_id != "")
                 cfg2ssa[n.id] = created_node_id;
+            if (phi_watchers.contains(n.id))
+            {
+                for (const auto &phi_id : phi_watchers[n.id])
+                {
+                    PendingPhi &phi = pending_phis[phi_id];
+                    phi.deps[n.id] = lvr.get_variable(phi.var);
+                    // TODO: implement function which would re-generate phi's text based on phi.deps
+                    update_phi_node(g, phi_id, phi);
+                }
+            }
 
             // if (pending_phis.contains(n.id))
             // { // If some phi was waiting on this node
@@ -516,7 +593,11 @@ namespace lab
                         {
                             if (cfg2ssa.contains(edge.to))
                             {
-                                g.edges.push_back(GraphEdge{cfg2ssa[edge.from], cfg2ssa[edge.to], edge.label, edge.color});
+                                for (const auto &out : new_parent.outs)
+                                {
+                                    g.edges.push_back(GraphEdge{out.id, cfg2ssa[edge.to], edge.label, edge.color});
+                                }
+                                // g.edges.push_back(GraphEdge{cfg2ssa[edge.from], cfg2ssa[edge.to], edge.label, edge.color});
                             }
                             else
                             {
@@ -549,7 +630,8 @@ namespace lab
         // return {std::nullopt, {{"ssa_not_implemented", "SSA construction is not implemented yet.", {0, 0}}}};
     }
 
-    Variable VariableRegistry::create_variable(std::string name, std::string node, std::string type)
+    Variable
+    VariableRegistry::create_variable(std::string name, std::string node, std::string type)
     {
         Variable new_var{0, name, type, node};
         variables[name] = new_var;

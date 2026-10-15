@@ -32,9 +32,9 @@ namespace lab
     class VariableRegistry
     {
     private:
+    public:
         std::unordered_map<std::string, Variable> variables;
 
-    public:
         Variable get_variable(std::string name);
         std::size_t get_version(std::string name);
         void set_version(std::string name, std::size_t version, std::string node);
@@ -48,12 +48,13 @@ namespace lab
         // 1. Our vr
         VariableRegistry vr;
         // Variable being merged
-        Variable var;
+        std::string var;
         // 2. Parent for the phi node
         NodeResult p;
         // 3. Successor for the phi node (do ourselves from g.edges)
         // 4. This graph node
         GraphNode n;
+        std::unordered_map<std::string, Variable> deps;
     };
 
 } // namespace lab
