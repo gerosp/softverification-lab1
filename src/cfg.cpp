@@ -57,11 +57,12 @@ namespace lab
     CfgResult build_cfg(const ParsedMethod &method)
     {
         CfgResult cfg;
+
         cfg.graph = Graph{};
         Graph &g = cfg.graph.value();
         g.nodes.push_back({"start", "Start", "Start", SourceRange{0, 0}, std::nullopt});
         g.nodes.push_back({"end", "End", "End", SourceRange{0, 0}, std::nullopt});
-
+        std::deque<std::string> switch_case_value;
         std::function<NodeResult(SyntaxNode, NodeResult, unsigned)> visit = [&](SyntaxNode n, NodeResult p, unsigned depth)
         {
             // auto id = "n" + std::to_string(g.nodes.size());
@@ -145,7 +146,7 @@ namespace lab
             else if (n.kind() == "for_statement")
             {
                 SyntaxNode init_node = n.field("initializer");
-                GraphNode g_init = create_simple_node(g, init_node, p.outs, id);
+                GraphNode g_init = create_simple_node(g, init_node, p.outs, id, "local_declaration_statement");
                 SyntaxNode condition_node = n.field("condition");
                 GraphNode g_cond = create_simple_node(g, condition_node, create_simple_parents({g_init.id}), get_next_id(g), "condition");
 
@@ -153,7 +154,7 @@ namespace lab
                 NodeResult body_node_id = visit(body_node, NodeResult{create_simple_parents({g_cond.id}), {}}, depth + 1);
                 SyntaxNode update_node = n.field("update");
 
-                GraphNode g_update = create_simple_node(g, update_node, body_node_id.outs, get_next_id(g));
+                GraphNode g_update = create_simple_node(g, update_node, body_node_id.outs, get_next_id(g), "assignment_expression");
                 g.edges.push_back(GraphEdge{g_update.id, g_cond.id, "loop"});
                 std::vector<ParentEdge> out = {ParentEdge{g_cond.id}};
 
@@ -193,6 +194,7 @@ namespace lab
             {
                 SyntaxNode value = n.field("value");
                 last_case_value_name = value.text();
+                switch_case_value.push_front(std::string(value.text()));
                 NodeResult out;
                 SyntaxNode body = n.field("body");
                 NodeResult nr = p;
@@ -207,6 +209,7 @@ namespace lab
                         }
                     }
                 }
+                switch_case_value.pop_front();
                 return out; // eat break statements
             }
             else if (n.kind() == "switch_section")
@@ -223,12 +226,13 @@ namespace lab
                 }
                 NodeResult nr;
                 // std::string value = "val"; // TODO: find parent in graph, get its value. We ACTUALLY DONT know its id by p.outs[0]
-                std::string value = last_case_value_name; // TODO: this WILL break
+                // std::string value = last_case_value_name; // TODO: this WILL break
+                std::string value = switch_case_value.front();
                 if (constant_pattern != "")
                 { // regular branch
                     std::string cond_id = get_next_id(g);
-                    
-                    g.nodes.push_back(GraphNode{cond_id, "condition", value + "==" + constant_pattern, n.range(), std::nullopt}); // TODO: Construct a syntax node, or SSA will not be able to parse the condition correctly
+                    SyntaxNode cond_syntax(TSNode{}, &method);
+                    g.nodes.push_back(GraphNode{cond_id, "condition", value + "==" + constant_pattern, n.range(), cond_syntax}); // TODO: Construct a syntax node, or SSA will not be able to parse the condition correctly
                     for (const auto &pr : p.outs)
                     {
                         g.edges.push_back(GraphEdge{pr.id, cond_id, pr.comment, pr.color});

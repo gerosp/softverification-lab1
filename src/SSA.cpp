@@ -1,10 +1,13 @@
 #include "lab/SSA.hpp"
 #include "lab/cfg.hpp"
 #include <cassert>
+#include <unordered_set>
+#include <unordered_map>
 namespace lab
 {
     // std::string get_next_id(const Graph &g) { return "n" + std::to_string(g.nodes.size()); }
     std::string get_next_id(const Graph &g); // TODO: This relies on cfg.hpp include, bad
+
     std::optional<GraphNode> find_node_in_graph(const Graph &g, const std::string &id)
     {
         for (const auto &n : g.nodes)
@@ -33,15 +36,15 @@ namespace lab
         if (n.kind() == "binary_expression")
         {
 
-            return replace_identifiers(vr, n.field("left")) + replace_identifiers(vr, n.field("operator")) + replace_identifiers(vr, n.field("right"));
+            return replace_identifiers(vr, n.field("left")) + " " + replace_identifiers(vr, n.field("operator")) + " " + replace_identifiers(vr, n.field("right"));
         }
         if (n.kind() == "identifier")
         {
             return vr.get_variable(std::string(n.text())).to_string();
         }
-        else if (n.kind() == "prefix_unary_expression")
+        else if (n.kind() == "prefix_unary_expression" || n.kind() == "postfix_unary_expression")
         {
-            return replace_identifiers(vr, n.child(0)) + replace_identifiers(vr, n.child(1));// TODO: better to use a loop here
+            return replace_identifiers(vr, n.child(0)) + replace_identifiers(vr, n.child(1)); // TODO: better to use a loop here
         }
         else
         {
@@ -56,6 +59,64 @@ namespace lab
             vr.create_variable(std::string(param.field("name").text()), std::string(param.field("type").text()));
         }
     }
+    void build_dependencies(std::unordered_map<std::string, std::vector<GraphNode>> &preds, std::unordered_map<std::string, std::vector<GraphNode>> &succs, const Graph &g)
+    {
+        for (const auto &e : g.edges)
+        {
+            auto from = find_node_in_graph(g, e.from);
+            auto to = find_node_in_graph(g, e.to);
+            if (!from.has_value() || !to.has_value())
+            {
+                continue;
+            }
+            if (preds.contains(to.value().id))
+            {
+                preds[to.value().id].push_back(from.value());
+            }
+            else
+            {
+                preds[to.value().id] = {from.value()};
+            }
+
+            if (succs.contains(from.value().id))
+            {
+                succs[from.value().id].push_back(to.value());
+            }
+            else
+            {
+                succs[from.value().id] = {to.value()};
+            }
+        }
+    }
+
+    NodeResult create_phi_node(VariableRegistry &vr, Graph &g, std::vector<Variable> &v, GraphNode &n, NodeResult p)
+    {
+        std::string id = get_next_id(g);
+        Variable newvar = vr.get_and_inc_variable(v[0].name, id);
+        std::string text = newvar.to_string() + " = phi (";
+        for (auto &var : v)
+        {
+            text += var.to_string();
+            if (&var != &v.back())
+            {
+                text += ", ";
+            }
+        }
+        text += ")";
+        g.nodes.push_back(GraphNode{id, "phi", text, n.range, n.syntax_node});
+        // Ignore control flow dependencies (or not?    )
+        for (const auto &edge : p.outs)
+        {
+            g.edges.push_back(GraphEdge{edge.id, id, ""});
+        }
+
+        // Instead, create edges for every incoming variable
+        // g.edges.push_back(GraphEdge{v1.created_at, id, "", GraphEdgeColor::Green});
+        // g.edges.push_back(GraphEdge{v2.created_at, id, "", GraphEdgeColor::Green});
+
+        p.outs = {ParentEdge{id}};
+        return p;
+    }
 
     SsaResult build_ssa(const ParsedMethod &method, const Graph &cfg)
     {
@@ -63,6 +124,15 @@ namespace lab
         ssa.graph = Graph{};
         Graph &g = ssa.graph.value();
         VariableRegistry vr;
+        std::unordered_set<std::string> visited;
+        std::unordered_map<std::string, std::vector<GraphNode>> preds;
+        std::unordered_map<std::string, std::vector<GraphNode>> succs;
+        std::unordered_map<std::string, VariableRegistry> vars;
+        std::unordered_map<std::string, std::string> cfg2ssa;
+        std::unordered_map<std::string, std::vector<PendingPhi>> pending_phis;
+        std::unordered_map<std::string, std::vector<ParentEdge>> pending_edges; // CFG id to SSA id
+
+        build_dependencies(preds, succs, cfg);
         parse_arguments(vr, method.root());
         GraphNode start;
         for (const auto &node : cfg.nodes)
@@ -74,8 +144,114 @@ namespace lab
             }
         }
 
-        std::function<NodeResult(GraphNode, NodeResult, unsigned)> visit = [&](GraphNode n, NodeResult p, unsigned depth)
+        std::function<NodeResult(GraphNode, NodeResult, unsigned, VariableRegistry)> visit = [&](GraphNode n, NodeResult p, unsigned depth, VariableRegistry lvr)
         {
+            visited.insert(n.id);
+            std::string created_node_id = "";
+
+            // If a node has multiple preds
+            // It would need a phi node placed (?)
+            // But only on the variables that are different in both branches
+            if (preds.contains(n.id) && preds[n.id].size() > 1)
+            {
+                // Find different variables
+                std::vector<std::string> pending_phi_ids;
+                VariableRegistry pvr = vars[preds[n.id][0].id];
+                std::unordered_map<std::string, std::vector<Variable>> diff_vars;
+                for (const auto &pred : preds[n.id])
+                {
+                    // TODO: It is possible to lose a conflict if the first pvr does not contain the conflicting variable
+                    if (vars.contains(pred.id) || !visited.contains(preds[n.id][0].id))
+                    {
+                        const auto variables = pvr.get_conflicting_variables(vars[pred.id]);
+
+                        for (const auto &v : variables)
+                        {
+                            if (!diff_vars.contains(v.first.name))
+                            {
+                                diff_vars[v.first.name] = {v.first, v.second};
+                            }
+                            else
+                            {
+                                diff_vars[v.first.name].push_back(v.second);
+                            }
+                        }
+                    }
+                    else
+                    {
+                        pending_phi_ids.push_back(pred.id);
+                        // We cannot judge about if there is a conflict now
+                        // When this node is actually visited, we want it to:
+                        // compare its own varreg with whatever we had here
+                        // if a conflict is present, splice the phi chain somewhere
+                        // and add a typical phi node
+
+                        // For that, we should give the node:
+                        // 1. Our vr
+                        // 2. Parent for the phi node (either previous phi or list of what came in)
+                        // 3. Successor for the phi node
+                        // 4. This graph node
+
+                        // How to find successor?
+                        //  We dont really know what connects to this node
+                        //  So either look for cfg2ssa[each: succs[n.id]]
+                        //  Or for graph edges coming out of the parent node
+                        //  We will need to break those  (or change the dest) anyway i think
+
+                        // Alternative idea:
+
+                        // Cannot go further until we come here again, but this time when everything is evaluated
+                        visited.erase(n.id); // Will break on self-edges and loops(?)
+                        if (pending_edges.contains(n.id))
+                        {
+                            pending_edges[n.id].push_back(p.outs[0]);
+                        }
+                        else
+                        {
+                            pending_edges[n.id] = p.outs;
+                        }
+                        return NodeResult{};
+
+                        // BUT: if there is an actual loop in the cfg... like... a loop.. you know
+                        // We will never return there (at least with visited preds)
+                        // And we do not know what versions or variables to put phi, as the loop is not visited yet.
+                        // ssa.diagnostics.push_back(Diagnostic{"ssa_dbg", "Encountered missing vars", n.range.value_or(SourceRange{})});
+                    }
+                }
+
+                for (auto &[name, conflicts] : diff_vars)
+                {
+                    // ssa.diagnostics.push_back(Diagnostic{"ssa_dbg", "Conflict size: " + std::to_string(conflicts.size()), n.range.value_or(SourceRange{})});
+
+                    // Chain phi nodes one after the other
+                    p = create_phi_node(vr, g, conflicts, n, p);
+                    if (created_node_id == "")
+                        created_node_id = p.outs[0].id;
+                }
+                for (const auto &id : pending_phi_ids)
+                {
+                    if (pending_phis.contains(id))
+                    {
+                        pending_phis[id].push_back(PendingPhi{pvr, p, n});
+                    }
+                    else
+                    {
+                        pending_phis[id] = {PendingPhi{pvr, p, n}};
+                    }
+                }
+                if (pending_edges.contains(n.id))
+                {
+                    for (const auto &e : pending_edges[n.id])
+                    {
+                        if (created_node_id != "")
+                        {
+                            g.edges.push_back(GraphEdge{e.id, created_node_id, e.comment, e.color});
+                        }
+                    }
+                }
+            }
+            NodeResult new_parent = p;
+
             if (n.kind == "local_declaration_statement")
             {
 
@@ -89,14 +265,25 @@ namespace lab
                 }
 
                 auto variable_declaration = find_child1(n.syntax_node.value(), "variable_declaration");
-                if (!variable_declaration.has_value())
+                // For statement produces a "local_declaration_statement" that is actually a variable_declaration
+                auto variable_declarator = find_child1(n.syntax_node.value(), "variable_declarator");
+
+                if (!variable_declaration.has_value() && !variable_declarator.has_value())
                 {
                     ssa.diagnostics.push_back(Diagnostic{"Found declaration without syntax node", "No syntax node in variable_declaration", n.range.value_or(SourceRange{})});
                     return NodeResult{};
                 }
-                type = variable_declaration.value().field("type").text();
+                if (variable_declaration.has_value())
+                {
+                    type = variable_declaration.value().field("type").text();
+                }
+                else
+                {
+                    type = n.syntax_node.value().field("type").text();
+                }
+                if (!variable_declarator.has_value())
+                    variable_declarator = find_child1(variable_declaration.value(), "variable_declarator");
 
-                auto variable_declarator = find_child1(variable_declaration.value(), "variable_declarator");
                 if (!variable_declarator.has_value())
                 {
                     ssa.diagnostics.push_back(Diagnostic{"Found declaration without syntax node", "No syntax node in variable_declarator", n.range.value_or(SourceRange{})});
@@ -104,29 +291,34 @@ namespace lab
                 }
                 name = variable_declarator.value().field("name").text();
                 auto rest = variable_declarator.value().child(2); // Assume name (0) = (1) *expr* (2)
-                Variable var = vr.create_variable(name, type);
+                std::string id = "n" + std::to_string(g.nodes.size());
+
+                Variable var = vr.create_variable(name, id, type);
 
                 // text = var.to_string() + " = " + std::string(rest.text());
                 text = var.to_string() + " = " + replace_identifiers(vr, rest);
-                std::string id = "n" + std::to_string(g.nodes.size());
 
                 g.nodes.push_back(GraphNode{id, n.kind, text, n.range, n.syntax_node});
                 for (const auto &edge : p.outs)
                 {
-                    g.edges.push_back(GraphEdge{edge.id, id});
+                    g.edges.push_back(GraphEdge{edge.id, id, ""});
                 }
-                for (const auto &edge : cfg.edges)
-                {
-                    if (edge.from == n.id)
-                    {
+                new_parent = NodeResult{{ParentEdge{id}}, {}};
+                if (created_node_id == "")
+                    created_node_id = id;
+                // for (const auto &edge : cfg.edges)
+                // {
+                //     if (edge.from == n.id)
+                //     {
 
-                        auto to = find_node_in_graph(cfg, edge.to);
-                        if (to.has_value())
-                        {
-                            visit(to.value(), NodeResult{{ParentEdge{id}}, {}}, depth + 1);
-                        }
-                    }
-                }
+                //         auto to = find_node_in_graph(cfg, edge.to);
+                //         if (to.has_value())
+                //         {
+                //             if (!visited.contains(to.value().id))
+                //                 visit(to.value(), NodeResult{{ParentEdge{id}}, {}}, depth + 1);
+                //         }
+                //     }
+                // }
             }
             else if (n.kind == "expression_statement")
             {
@@ -135,53 +327,119 @@ namespace lab
                     ssa.diagnostics.push_back(Diagnostic{"ssa_no_syntax", "Found expression without syntax node", n.range.value_or(SourceRange{})});
                     return NodeResult{};
                 }
+                std::string text;
+                std::string id = "n" + std::to_string(g.nodes.size());
+
                 std::optional<SyntaxNode> assignment_expression = find_child1(n.syntax_node.value(), "assignment_expression");
                 if (!assignment_expression.has_value())
                 {
-                    ssa.diagnostics.push_back(Diagnostic{"ssa_no_syntax", "Found assignment  without syntax node", n.range.value_or(SourceRange{})});
-                    return NodeResult{};
+                    std::optional<SyntaxNode> postfix_expression = find_child1(n.syntax_node.value(), "postfix_unary_expression");
+                    if (!postfix_expression.has_value())
+                    {
+                        ssa.diagnostics.push_back(Diagnostic{"ssa_no_syntax", "Found assignment  without syntax node", n.range.value_or(SourceRange{})});
+                        return NodeResult{};
+                    }
+                    std::string identifier = std::string(postfix_expression.value().child(0).text());
+                    vr.get_and_inc_variable(identifier, n.id);
+                    text = replace_identifiers(vr, n.syntax_node.value());
                 }
-                // Assumes left is identifier
-                std::string dest = std::string(assignment_expression.value().field("left").text());
-                std::string text;
-                std::string right = replace_identifiers(vr, assignment_expression.value().field("right"));
-                text = vr.get_and_inc_variable(dest).to_string() + "=" + right;
-                std::string id = "n" + std::to_string(g.nodes.size());
+                else // It is an assignment
+                {
+                    // Assumes left is identifier
+                    std::string dest = std::string(assignment_expression.value().field("left").text());
+                    std::string right = replace_identifiers(vr, assignment_expression.value().field("right"));
+                    text = vr.get_and_inc_variable(dest, id).to_string() + "=" + right;
+                }
                 g.nodes.push_back(GraphNode{id, n.kind, text, n.range, n.syntax_node});
                 for (const auto &edge : p.outs)
                 {
-                    g.edges.push_back(GraphEdge{edge.id, id});
+                    g.edges.push_back(GraphEdge{edge.id, id, ""});
                 }
-                for (const auto &edge : cfg.edges)
-                {
-                    if (edge.from == n.id)
-                    {
+                new_parent = NodeResult{{ParentEdge{id}}, {}};
+                if (created_node_id == "")
+                    created_node_id = id;
+                // for (const auto &edge : cfg.edges)
+                // {
+                //     if (edge.from == n.id)
+                //     {
 
-                        auto to = find_node_in_graph(cfg, edge.to);
-                        if (to.has_value())
-                        {
-                            visit(to.value(), NodeResult{{ParentEdge{id}}, {}}, depth + 1);
-                        }
-                    }
+                //         auto to = find_node_in_graph(cfg, edge.to);
+                //         if (to.has_value())
+                //         {
+                //             if (!visited.contains(to.value().id))
+                //                 visit(to.value(), NodeResult{{ParentEdge{id}}, {}}, depth + 1);
+                //         }
+                //     }
+                // }
+            }
+            else if (n.kind == "assignment_expression")
+            {
+                if (!n.syntax_node.has_value())
+                {
+                    ssa.diagnostics.push_back(Diagnostic{"ssa_no_syntax", "Found assignment expression without syntax node", n.range.value_or(SourceRange{})});
                 }
+                SyntaxNode assignment_expression = n.syntax_node.value();
+                // Assumes left is identifier
+                std::string dest = std::string(assignment_expression.field("left").text());
+                std::string text;
+                std::string right = replace_identifiers(vr, assignment_expression.field("right"));
+                std::string id = "n" + std::to_string(g.nodes.size());
+
+                text = vr.get_and_inc_variable(dest, id).to_string() + "=" + right;
+                g.nodes.push_back(GraphNode{id, n.kind, text, n.range, n.syntax_node});
+                for (const auto &edge : p.outs)
+                {
+                    g.edges.push_back(GraphEdge{edge.id, id, ""});
+                }
+                new_parent = NodeResult{{ParentEdge{id}}, {}};
+                if (created_node_id == "")
+                    created_node_id = id;
+            }
+            else if (n.kind == "return_statement")
+            {
+                std::string id = get_next_id(g);
+                if (!n.syntax_node)
+                {
+                    ssa.diagnostics.push_back(Diagnostic{"missing_syntax_node", "Return node is missing a SyntaxNode", n.range.value_or(SourceRange{})});
+
+                    return NodeResult{{}, {}};
+                }
+                std::string text = " ";
+                for (const auto &child : n.syntax_node.value().children())
+                {
+                    text += replace_identifiers(vr, child) + " ";
+                }
+                g.nodes.push_back(GraphNode{id, n.kind, text, n.range, n.syntax_node});
+                for (const auto &edge : p.outs)
+                {
+                    g.edges.push_back(GraphEdge{edge.id, id, ""});
+                }
+                new_parent = NodeResult{{ParentEdge{id}}, {}};
+                if (created_node_id == "")
+                    created_node_id = id;
+            }
+            else if (n.kind == "condition")
+            {
+                std::string id = get_next_id(g);
+                if (!n.syntax_node.has_value())
+                {
+                    ssa.diagnostics.push_back(Diagnostic{"missing_syntax_node", "Condition node is missing a SyntaxNode", n.range.value_or(SourceRange{})});
+
+                    return NodeResult{{}, {}};
+                }
+                std::string text = replace_identifiers(vr, n.syntax_node.value());
+                g.nodes.push_back(GraphNode{id, n.kind, text, n.range, n.syntax_node});
+                for (const auto &edge : p.outs)
+                {
+                    g.edges.push_back(GraphEdge{edge.id, id, ""});
+                }
+                new_parent = NodeResult{{ParentEdge{id}}, {}};
+                if (created_node_id == "")
+                    created_node_id = id;
             }
             else // Non terminal nodes
             {
 
-                for (const auto &edge : cfg.edges)
-                {
-                    if (edge.from == n.id)
-                    {
-
-                        auto to = find_node_in_graph(cfg, edge.to);
-                        if (to.has_value())
-                        {
-                            // ssa.diagnostics.push_back(Diagnostic{"Found next node:", to.value().kind + "", n.range.value_or(SourceRange{})});
-                            visit(to.value(), p, depth + 1);
-                        }
-                    }
-                }
-                // TODO: check graph edges to detect which node to go to next
                 // NodeResult prev_id = p;
                 // std::vector<LoopControl> lcs;
                 // std::vector<std::string> outs;
@@ -195,12 +453,76 @@ namespace lab
                 // }
                 // return NodeResult{prev_id.outs, lcs};
             }
+            vars[n.id] = vr;
+
+            // if (!p.outs.empty())
+            //     cfg2ssa[n.id] = p.outs[0].id; // Ideally that would be just newly created node id
+
+            // This prevents nodes from overriding the cfg2ssa, however now some n.id might miss ther SSA link
+            // IDK if we need SSA link for every CFG node...
+            if (created_node_id != "")
+                cfg2ssa[n.id] = created_node_id;
+
+            // if (pending_phis.contains(n.id))
+            // { // If some phi was waiting on this node
+            //     for (auto &phi : pending_phis[n.id])
+            //     {
+            //         auto new_p = phi.p;
+            //         for (const auto &[v1, v2] : phi.vr.get_conflicting_variables(vr))
+            //         {
+            //             // Chain phi nodes one after the other
+            //             new_p = create_phi_node(vr, g, v1, v2, phi.n, new_p);
+
+            //             // Now lets fix the graph
+
+            //             for (auto &edge : cfg.edges)
+            //             {
+            //                 if (edge.to==){
+
+            //                 }
+            //             }
+            //         }
+            //     }
+            // }
+            for (const auto &edge : cfg.edges)
+            {
+                if (edge.from == n.id)
+                {
+
+                    auto to = find_node_in_graph(cfg, edge.to);
+                    if (to.has_value())
+                    {
+                        // ssa.diagnostics.push_back(Diagnostic{"Found next node:", to.value().kind + "", n.range.value_or(SourceRange{})});
+                        if (!visited.contains(to.value().id))
+                            visit(to.value(), new_parent, depth + 1);
+                        else
+                        {
+                            if (cfg2ssa.contains(edge.to))
+                            {
+                                g.edges.push_back(GraphEdge{cfg2ssa[edge.from], cfg2ssa[edge.to], edge.label, edge.color});
+                            }
+                            else
+                            {
+                                // ssa.diagnostics.push_back(Diagnostic{"ssa_dbg", "Do not know the next node!", n.range.value_or(SourceRange{})});
+
+                                // Oopsie, have not visited "to" node (or "start"/"end")
+                            }
+                        }
+                    }
+                }
+
+                // if (edge.to == n.id && created_node_id != "")
+                // { // Sometimes we may forget about edges TO this node (if visited.contains fails)
+                //     // TODO: edge.from might not be visited yet
+                //     g.edges.push_back(GraphEdge{cfg2ssa[edge.from], created_node_id, ""});
+                // }
+            }
 
             return p;
             // return NodeResult{};
         };
 
-        visit(start, NodeResult{}, 0);
+        visit(start, NodeResult{}, 0, vr);
         // ssa.diagnostics.push_back(Diagnostic{"", "Graph Size:" + std::to_string(ssa.graph.value().nodes.size()), SourceRange{}});
 
         // ssa.graph = cfg;
@@ -210,9 +532,9 @@ namespace lab
         // return {std::nullopt, {{"ssa_not_implemented", "SSA construction is not implemented yet.", {0, 0}}}};
     }
 
-    Variable VariableRegistry::create_variable(std::string name, std::string type)
+    Variable VariableRegistry::create_variable(std::string name, std::string node, std::string type)
     {
-        Variable new_var{0, name, type};
+        Variable new_var{0, name, type, node};
         variables[name] = new_var;
         return new_var;
     }
@@ -224,10 +546,25 @@ namespace lab
     {
         return variables[name].version;
     }
-    Variable VariableRegistry::get_and_inc_variable(std::string name)
+    Variable VariableRegistry::get_and_inc_variable(std::string name, std::string node)
     {
         variables[name].version++;
+        variables[name].created_at = node;
         return variables[name];
+    }
+    void VariableRegistry::set_version(std::string name, std::size_t version)
+    {
+        variables[name].version = version;
+    }
+    std::vector<std::pair<Variable, Variable>> VariableRegistry::get_conflicting_variables(VariableRegistry &other)
+    {
+        std::vector<std::pair<Variable, Variable>> res;
+        for (const auto &[n, v] : this->variables)
+        {
+            if (v.version != other.get_version(n))
+                res.push_back(std::pair{v, other.get_variable(n)});
+        }
+        return res;
     }
 
 } // namespace lab
