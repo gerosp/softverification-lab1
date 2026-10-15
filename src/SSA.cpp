@@ -502,6 +502,29 @@ namespace lab
                 if (created_node_id == "")
                     created_node_id = id;
             }
+            else if (n.kind == "postfix_unary_expression")
+            {
+                if (!n.syntax_node.has_value())
+                {
+                    ssa.diagnostics.push_back(Diagnostic{"ssa_no_syntax", "Found postfix unary expression without syntax node", n.range.value_or(SourceRange{})});
+                }
+
+                std::string dest = std::string(n.syntax_node.value().child(0).text());
+                std::string text;
+                std::string operation = std::string(n.syntax_node.value().child(1).text());
+                std::string id = "n" + std::to_string(g.nodes.size());
+                const auto v = vr.get_and_inc_variable(dest, id);
+                lvr.set_version(dest, v.version, id);
+                text = lvr.get_variable(dest).to_string() + operation;
+                g.nodes.push_back(GraphNode{id, n.kind, text, n.range, n.syntax_node});
+                for (const auto &edge : p.outs)
+                {
+                    g.edges.push_back(GraphEdge{edge.id, id, ""});
+                }
+                new_parent = NodeResult{{ParentEdge{id}}, {}};
+                if (created_node_id == "")
+                    created_node_id = id;
+            }
             else if (n.kind == "condition")
             {
                 std::string id = get_next_id(g);

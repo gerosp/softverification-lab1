@@ -70,14 +70,21 @@ namespace lab
 
             auto kind = std::string(n.kind());
 
-            if (n.kind() == "local_declaration_statement" || n.kind() == "expression_statement")
+            if (n.kind() == "local_declaration_statement")
+            {
+                // create_simple_node(g, n.child(0), p.outs, id); // TODO: This breaks SSA as it expects local_declaration_statement
+                create_simple_node(g, n, p.outs, id);          
+
+                return NodeResult{create_simple_parents({id}), {}};
+            }
+            else if (n.kind() == "expression_statement")
             {
                 create_simple_node(g, n, p.outs, id);
                 return NodeResult{create_simple_parents({id}), {}};
             }
             else if (n.kind() == "return_statement")
             {
-                GraphNode node = create_simple_node(g, n, p.outs, id);
+                GraphNode node = create_simple_node(g, n, p.outs, id); // TODO: remove trailing ';'
                 g.edges.push_back({node.id, "end", "return"});
                 std::vector<std::string> out;
                 return NodeResult{create_simple_parents(out), {}};
@@ -154,7 +161,7 @@ namespace lab
                 NodeResult body_node_id = visit(body_node, NodeResult{create_simple_parents({g_cond.id}), {}}, depth + 1);
                 SyntaxNode update_node = n.field("update");
 
-                GraphNode g_update = create_simple_node(g, update_node, body_node_id.outs, get_next_id(g), "assignment_expression");
+                GraphNode g_update = create_simple_node(g, update_node, body_node_id.outs, get_next_id(g), std::string(update_node.kind()));
                 g.edges.push_back(GraphEdge{g_update.id, g_cond.id, "loop"});
                 std::vector<ParentEdge> out = {ParentEdge{g_cond.id}};
 
@@ -256,6 +263,37 @@ namespace lab
                 return nr;
                 // return NodeResult{nr.outs, {}};
                 // eat break node if present, make the necessary adjustment (add break to outs)
+            }
+            else if (n.kind() == "foreach_statement")
+            {
+                // cfg.diagnostics.push_back(Diagnostic{"INFO", "Foreach", n.range()});
+
+                std::string id = get_next_id(g);
+                SyntaxNode left = n.field("left");
+                SyntaxNode right = n.field("right");
+                std::vector<ParentEdge> out;
+
+                // parse("Enerator enumerator = +"right.text()+".GetEnumerator();")
+                GraphNode g_init = create_simple_node(g, right, p.outs, get_next_id(g));
+
+                // SyntaxNode enumerator = %left%.getEnumerator()
+
+                SyntaxNode body = n.field("body");
+                SyntaxNode condition{TSNode{}, &method};
+                // SyntaxNode condition; // enumerator.MoveNext()
+                GraphNode g_cond = create_simple_node(g, condition, {ParentEdge{g_init.id, ""}}, get_next_id(g));
+
+                // Create   requested variable as enumerator.Current
+                // parse("var "+right.text+"= enumerator.Current;")
+                GraphNode loop_init = create_simple_node(g, left, {ParentEdge{g_cond.id, "true", GraphEdgeColor::Green}}, get_next_id(g));
+                NodeResult body_node_id = visit(body, NodeResult{create_simple_parents({loop_init.id}), {}}, depth + 1);
+                for (const auto &b : body_node_id.outs)
+                {
+                    g.edges.push_back(GraphEdge{b.id, g_cond.id, "loop"});
+                }
+                handle_lc(g, g_cond, body_node_id.lc, out);
+                out.push_back(ParentEdge{g_cond.id, "false", GraphEdgeColor::Red});
+                return NodeResult{out, {}};
             }
             else // Non terminal nodes
             {
