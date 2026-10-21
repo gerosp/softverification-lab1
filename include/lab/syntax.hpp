@@ -58,6 +58,7 @@ namespace lab
         SyntaxNode root() const;
         std::string_view source() const { return source_; }
         SourceRange user_range(TSNode node) const;
+        std::vector<std::unique_ptr<ParsedMethod>> synthetic_methods;
 
     private:
         std::string source_;

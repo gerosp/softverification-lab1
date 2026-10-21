@@ -43,9 +43,9 @@ namespace lab
         }
     }
 
-    GraphNode create_simple_node(Graph &g, const SyntaxNode &node, const std::vector<ParentEdge> &parent, const std::string id, const std::string kind = "")
+    GraphNode create_simple_node(Graph &g, const SyntaxNode &node, const std::vector<ParentEdge> &parent, const std::string id, const std::string kind = "", const std::optional<SourceRange> range = std::nullopt)
     {
-        GraphNode g_node = GraphNode{id, kind == "" ? std::string(node.kind()) : kind, std::string(node.text()), node.range(), node};
+        GraphNode g_node = GraphNode{id, kind == "" ? std::string(node.kind()) : kind, std::string(node.text()), range.has_value() ? range.value() : node.range(), node};
         g.nodes.push_back(g_node);
         for (const auto &p : parent)
         {
@@ -73,7 +73,7 @@ namespace lab
             if (n.kind() == "local_declaration_statement")
             {
                 // create_simple_node(g, n.child(0), p.outs, id); // TODO: This breaks SSA as it expects local_declaration_statement
-                create_simple_node(g, n, p.outs, id);          
+                create_simple_node(g, n, p.outs, id);
 
                 return NodeResult{create_simple_parents({id}), {}};
             }
@@ -238,8 +238,17 @@ namespace lab
                 if (constant_pattern != "")
                 { // regular branch
                     std::string cond_id = get_next_id(g);
-                    SyntaxNode cond_syntax(TSNode{}, &method);
-                    g.nodes.push_back(GraphNode{cond_id, "condition", value + "==" + constant_pattern, n.range(), cond_syntax}); // TODO: Construct a syntax node, or SSA will not be able to parse the condition correctly
+                    auto synthetic = lab::parse_method("bool __synthetic() { return " + value + " == " + constant_pattern + "; }");
+
+                    if (!synthetic.ok())
+                    {
+                        cfg.diagnostics.push_back(Diagnostic{"cfg-invalid-synthetic", "Could not create synthetic switch node " + synthetic.diagnostics[0].message, n.range()});
+                        return NodeResult{};
+                    }
+                    // SyntaxNode cond_syntax(synthetic.method->root().field("body"), &method);
+                    SyntaxNode cond_syntax = synthetic.method->root().field("body").children(true).front().children(true).front();
+                    const_cast<ParsedMethod &>(method).synthetic_methods.push_back(std::move(synthetic.method)); // TODO: hehe potentially unsafe
+                    g.nodes.push_back(GraphNode{cond_id, "condition", value + "==" + constant_pattern, n.range(), cond_syntax});
                     for (const auto &pr : p.outs)
                     {
                         g.edges.push_back(GraphEdge{pr.id, cond_id, pr.comment, pr.color});
@@ -272,20 +281,48 @@ namespace lab
                 SyntaxNode left = n.field("left");
                 SyntaxNode right = n.field("right");
                 std::vector<ParentEdge> out;
+                auto synthetic = lab::parse_method("bool __synthetic() { var enumerator_" + std::string(right.text()) + " = " + std::string(right.text()) + ".GetEnumerator() " + "; }");
+                if (!synthetic.ok())
+                {
+                    cfg.diagnostics.push_back(Diagnostic{"cfg-invalid-synthetic", "Could not create synthetic foreach init node " + synthetic.diagnostics[0].message, n.range()});
+                    return NodeResult{};
+                }
+                SyntaxNode init_syntax = synthetic.method->root().field("body").children(true).front().children(true).front();
+                const_cast<ParsedMethod &>(method).synthetic_methods.push_back(std::move(synthetic.method));
+                // SyntaxNode cond_syntax(synthetic.method->root().field("body"), &method);
 
                 // parse("Enerator enumerator = +"right.text()+".GetEnumerator();")
-                GraphNode g_init = create_simple_node(g, right, p.outs, get_next_id(g));
+                GraphNode g_init = create_simple_node(g, init_syntax, p.outs, get_next_id(g), "local_declaration_statement", right.range());
 
                 // SyntaxNode enumerator = %left%.getEnumerator()
 
                 SyntaxNode body = n.field("body");
-                SyntaxNode condition{TSNode{}, &method};
+                // SyntaxNode condition{TSNode{}, &method};
+                auto synthetic_cond = lab::parse_method("bool __synthetic() { enumerator_" + std::string(right.text()) + ".MoveNext(); }");
+                if (!synthetic_cond.ok())
+                {
+                    cfg.diagnostics.push_back(Diagnostic{"cfg-invalid-synthetic", "Could not create synthetic foreach cond node " + synthetic.diagnostics[0].message, n.range()});
+                    return NodeResult{};
+                }
+                SyntaxNode cond_syntax = synthetic_cond.method->root().field("body").children(true).front().children(true).front();
+                const_cast<ParsedMethod &>(method).synthetic_methods.push_back(std::move(synthetic_cond.method));
+
                 // SyntaxNode condition; // enumerator.MoveNext()
-                GraphNode g_cond = create_simple_node(g, condition, {ParentEdge{g_init.id, ""}}, get_next_id(g));
+                GraphNode g_cond = create_simple_node(g, cond_syntax, {ParentEdge{g_init.id, ""}}, get_next_id(g), "condition", right.range());
 
                 // Create   requested variable as enumerator.Current
                 // parse("var "+right.text+"= enumerator.Current;")
-                GraphNode loop_init = create_simple_node(g, left, {ParentEdge{g_cond.id, "true", GraphEdgeColor::Green}}, get_next_id(g));
+
+                auto synthetic_li = lab::parse_method("bool __synthetic() { var " + std::string(left.text()) + " = enumerator_" + std::string(right.text()) + ".Current; }");
+                if (!synthetic_li.ok())
+                {
+                    cfg.diagnostics.push_back(Diagnostic{"cfg-invalid-synthetic", "Could not create synthetic foreach cond node " + synthetic.diagnostics[0].message, right.range()});
+                    return NodeResult{};
+                }
+                SyntaxNode loop_init_syntax = synthetic_li.method->root().field("body").children(true).front().children(true).front();
+                const_cast<ParsedMethod &>(method).synthetic_methods.push_back(std::move(synthetic_li.method));
+
+                GraphNode loop_init = create_simple_node(g, loop_init_syntax, {ParentEdge{g_cond.id, "true", GraphEdgeColor::Green}}, get_next_id(g), "local_declaration_statement", left.range());
                 NodeResult body_node_id = visit(body, NodeResult{create_simple_parents({loop_init.id}), {}}, depth + 1);
                 for (const auto &b : body_node_id.outs)
                 {

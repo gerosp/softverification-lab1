@@ -381,7 +381,7 @@ namespace lab
                 g.nodes.push_back(GraphNode{id, n.kind, text, n.range, n.syntax_node});
                 for (const auto &edge : p.outs)
                 {
-                    g.edges.push_back(GraphEdge{edge.id, id, ""});
+                    g.edges.push_back(GraphEdge{edge.id, id, edge.comment, edge.color});
                 }
                 new_parent = NodeResult{{ParentEdge{id}}, {}};
                 if (created_node_id == "")
@@ -436,7 +436,7 @@ namespace lab
                 g.nodes.push_back(GraphNode{id, n.kind, text, n.range, n.syntax_node});
                 for (const auto &edge : p.outs)
                 {
-                    g.edges.push_back(GraphEdge{edge.id, id, ""});
+                    g.edges.push_back(GraphEdge{edge.id, id, edge.comment, edge.color});
                 }
                 new_parent = NodeResult{{ParentEdge{id}}, {}};
                 if (created_node_id == "")
@@ -473,7 +473,7 @@ namespace lab
                 g.nodes.push_back(GraphNode{id, n.kind, text, n.range, n.syntax_node});
                 for (const auto &edge : p.outs)
                 {
-                    g.edges.push_back(GraphEdge{edge.id, id, ""});
+                    g.edges.push_back(GraphEdge{edge.id, id, edge.comment, edge.color});
                 }
                 new_parent = NodeResult{{ParentEdge{id}}, {}};
                 if (created_node_id == "")
@@ -496,7 +496,7 @@ namespace lab
                 g.nodes.push_back(GraphNode{id, n.kind, text, n.range, n.syntax_node});
                 for (const auto &edge : p.outs)
                 {
-                    g.edges.push_back(GraphEdge{edge.id, id, ""});
+                    g.edges.push_back(GraphEdge{edge.id, id, edge.comment, edge.color});
                 }
                 new_parent = NodeResult{{ParentEdge{id}}, {}};
                 if (created_node_id == "")
@@ -519,7 +519,7 @@ namespace lab
                 g.nodes.push_back(GraphNode{id, n.kind, text, n.range, n.syntax_node});
                 for (const auto &edge : p.outs)
                 {
-                    g.edges.push_back(GraphEdge{edge.id, id, ""});
+                    g.edges.push_back(GraphEdge{edge.id, id, edge.comment, edge.color});
                 }
                 new_parent = NodeResult{{ParentEdge{id}}, {}};
                 if (created_node_id == "")
@@ -538,9 +538,9 @@ namespace lab
                 g.nodes.push_back(GraphNode{id, n.kind, text, n.range, n.syntax_node});
                 for (const auto &edge : p.outs)
                 {
-                    g.edges.push_back(GraphEdge{edge.id, id, ""});
+                    g.edges.push_back(GraphEdge{edge.id, id, edge.comment, edge.color});
                 }
-                new_parent = NodeResult{{ParentEdge{id}}, {}};
+                new_parent = NodeResult{{ParentEdge{id, "true", GraphEdgeColor::Green}}, {}}; // TODO: Not necessarily right
                 if (created_node_id == "")
                     created_node_id = id;
             }
