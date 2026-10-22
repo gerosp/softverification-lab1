@@ -123,6 +123,7 @@ namespace lab
                 res += ", ";
             }
         }
+        res +=")";
         return res;
     }
     void parse_arguments(VariableRegistry &vr, const SyntaxNode &n)
@@ -203,7 +204,7 @@ namespace lab
         // Ignore control flow dependencies (or not?    )
         for (const auto &edge : p.outs)
         {
-            g.edges.push_back(GraphEdge{edge.id, id, ""});
+            g.edges.push_back(GraphEdge{edge.id, id, edge.comment, edge.color});
         }
 
         // Instead, create edges for every incoming variable
@@ -247,6 +248,10 @@ namespace lab
         {
             visited.insert(n.id);
             std::string created_node_id = "";
+            if (n.kind == "End")
+            {
+                return NodeResult{};
+            }
 
             // If a node has multiple preds
             // It would need a phi node placed (?)
@@ -487,6 +492,10 @@ namespace lab
                 // The NEW label creation process
                 labels[id] = {var, " = "};
                 build_label_from_identifiers(lvr, rest, id, labels);
+                if (rest.text() == "")
+                {
+                    labels[id].push_back("*uninitialized*");
+                }
 
                 g.nodes.push_back(GraphNode{id, n.kind, text, n.range, n.syntax_node});
                 for (const auto &edge : p.outs)
@@ -615,9 +624,12 @@ namespace lab
 
                 for (const auto &child : n.syntax_node.value().children())
                 {
-                    text += replace_identifiers(lvr, child) + " ";
-                    build_label_from_identifiers(lvr, child, id, labels);
-                    labels[id].push_back(" ");
+                    if (child.text() != ";")
+                    {
+                        text += replace_identifiers(lvr, child) + " ";
+                        build_label_from_identifiers(lvr, child, id, labels);
+                        labels[id].push_back(" ");
+                    }
                 }
                 g.nodes.push_back(GraphNode{id, n.kind, text, n.range, n.syntax_node});
                 for (const auto &edge : p.outs)
@@ -670,7 +682,7 @@ namespace lab
                 {
                     g.edges.push_back(GraphEdge{edge.id, id, edge.comment, edge.color});
                 }
-                new_parent = NodeResult{{ParentEdge{id, "true", GraphEdgeColor::Green}}, {}}; // TODO: Not necessarily right
+                new_parent = NodeResult{{ParentEdge{id}}, {}}; // TODO: Not necessarily right
                 if (created_node_id == "")
                     created_node_id = id;
             }
@@ -751,7 +763,15 @@ namespace lab
                     {
                         // ssa.diagnostics.push_back(Diagnostic{"Found next node:", to.value().kind + "", n.range.value_or(SourceRange{})});
                         if (!visited.contains(to.value().id))
-                            visit(to.value(), new_parent, depth + 1, lvr);
+                        {
+                            NodeResult n_p;
+                            for (const auto &o : new_parent.outs)
+                            {
+                                n_p.outs.push_back(ParentEdge{o.id, edge.label, edge.color});
+                            }
+                            n_p.lc = new_parent.lc;
+                            visit(to.value(), n_p, depth + 1, lvr);
+                        }
                         else
                         {
                             if (cfg2ssa.contains(edge.to))
@@ -812,7 +832,14 @@ namespace lab
                 replacement[phi.out_var] = *phi_variables.begin();
                 for (const auto &nphi : var2phis[phi.out_var])
                 {
-                    q.push_back(nphi);
+                    for (const auto &up_to_date_phi : phis)
+                    {
+                        if (up_to_date_phi.id == nphi.id)
+                        {
+                            q.push_back(up_to_date_phi);
+                        }
+                    }
+                    // q.push_back(nphi);
                 }
             }
             else if (phi_variables.size() == 0)
