@@ -39,6 +39,7 @@ namespace lab
     private:
     public:
         std::unordered_map<std::string, Variable> variables;
+        bool has_variable(std::string name);
 
         Variable get_variable(std::string name);
         std::size_t get_version(std::string name);

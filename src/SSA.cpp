@@ -123,7 +123,7 @@ namespace lab
                 res += ", ";
             }
         }
-        res +=")";
+        res += ")";
         return res;
     }
     void parse_arguments(VariableRegistry &vr, const SyntaxNode &n)
@@ -221,6 +221,8 @@ namespace lab
         ssa.graph = Graph{};
         Graph &g = ssa.graph.value();
         VariableRegistry vr;
+        std::unordered_set<Phi> removed_phis;
+
         std::unordered_set<std::string> visited;
         std::unordered_map<std::string, std::vector<GraphNode>> preds;
         std::unordered_map<std::string, std::vector<GraphNode>> succs;
@@ -367,13 +369,18 @@ namespace lab
                     for (auto &[name, var] : lvr.variables)
                     {
                         std::unordered_map<std::string, Variable> deps;
-
+                        bool everything_is_broken_stop_the_count = false;
                         std::vector<Variable> conflicts;
                         std::vector<Variable> ready_ins;
                         for (const auto &pred : preds[n.id])
                         {
                             if (vars.contains(pred.id))
                             {
+                                if (!vars[pred.id].has_variable(name))
+                                {
+                                    everything_is_broken_stop_the_count = true;
+                                    break;
+                                }
                                 conflicts.push_back(vars[pred.id].get_variable(name));
                                 ready_ins.push_back(vars[pred.id].get_variable(name));
 
@@ -385,6 +392,10 @@ namespace lab
                                 conflicts.push_back(v); // TODO: proper variable
                                 deps[pred.id] = v;
                             }
+                        }
+                        if (everything_is_broken_stop_the_count)
+                        {
+                            continue;
                         }
                         p = create_phi_node(vr, lvr, g, conflicts, n, p, name);
                         if (created_node_id == "")
@@ -594,12 +605,15 @@ namespace lab
                 std::string text;
                 std::string right = replace_identifiers(lvr, assignment_expression.field("right"));
                 std::string id = "n" + std::to_string(g.nodes.size());
+                labels[id] = {};
+                build_label_from_identifiers(lvr, assignment_expression.field("right"), id, labels);
+
                 const auto v = vr.get_and_inc_variable(dest, id);
                 lvr.set_version(dest, v.version, id);
                 text = lvr.get_variable(dest).to_string() + "=" + right;
-                labels[id] = {lvr.get_variable(dest), "="};
-
-                build_label_from_identifiers(lvr, assignment_expression.field("right"), id, labels);
+                // labels[id] = {lvr.get_variable(dest), "="};
+                labels[id].insert(labels[id].begin(), "=");
+                labels[id].insert(labels[id].begin(), lvr.get_variable(dest));
 
                 g.nodes.push_back(GraphNode{id, n.kind, text, n.range, n.syntax_node});
                 for (const auto &edge : p.outs)
@@ -716,17 +730,32 @@ namespace lab
                 for (const auto &phi_id : phi_watchers[n.id])
                 {
                     PendingPhi &phi = pending_phis[phi_id];
-                    phi.deps[n.id] = lvr.get_variable(phi.var);
-                    // TODO: implement function which would re-generate phi's text based on phi.deps
-                    update_phi_node(g, phi_id, phi);
-
-                    // Update phi ins
-                    for (auto &existing_phi : phis)
+                    if (lvr.has_variable(phi.var)) // If not, this phi is actually broken and should be nuked :(
                     {
-                        if (existing_phi.id == phi_id)
+
+                        phi.deps[n.id] = lvr.get_variable(phi.var);
+                        // TODO: implement function which would re-generate phi's text based on phi.deps
+                        update_phi_node(g, phi_id, phi);
+
+                        // Update phi ins
+                        for (auto &existing_phi : phis)
                         {
-                            existing_phi.ins.push_back(lvr.get_variable(phi.var));
-                            var2phis[lvr.get_variable(phi.var)].insert(existing_phi);
+                            if (existing_phi.id == phi_id)
+                            {
+                                existing_phi.ins.push_back(lvr.get_variable(phi.var));
+                                var2phis[lvr.get_variable(phi.var)].insert(existing_phi);
+                            }
+                        }
+                    }
+                    else
+                    {
+                        // This phi is invalid and merges a variable from a context where it does not exist
+                        for (auto &existing_phi : phis)
+                        {
+                            if (existing_phi.id == phi_id)
+                            {
+                                removed_phis.insert(existing_phi);
+                            }
                         }
                     }
                 }
@@ -808,7 +837,6 @@ namespace lab
 
         // Remove redundant phi nodes
         std::unordered_map<Variable, Variable> replacement;
-        std::unordered_set<Phi> removed_phis;
         std::deque<Phi> q(phis.begin(), phis.end());
         while (!q.empty())
         {
@@ -830,6 +858,11 @@ namespace lab
             { // Redundant phi
                 removed_phis.insert(phi);
                 replacement[phi.out_var] = *phi_variables.begin();
+                // Copy var2phis from being-phased-out out_var to *phi_variables.begin()
+                for (const auto &var : var2phis[phi.out_var])
+                {
+                    var2phis[*phi_variables.begin()].insert(var);
+                }
                 for (const auto &nphi : var2phis[phi.out_var])
                 {
                     for (const auto &up_to_date_phi : phis)
@@ -934,6 +967,10 @@ namespace lab
     {
         return variables[name];
     }
+    bool VariableRegistry::has_variable(std::string name)
+    {
+        return variables.contains(name);
+    }
     std::size_t VariableRegistry::get_version(std::string name)
     {
         return variables[name].version;
@@ -954,6 +991,10 @@ namespace lab
         std::vector<std::pair<Variable, Variable>> res;
         for (const auto &[n, v] : this->variables)
         {
+            if (!other.variables.contains(n))
+            {
+                continue; // Cannot have a conflict if a variable does not exist
+            }
             if (v.version != other.get_version(n))
                 res.push_back(std::pair{v, other.get_variable(n)});
         }

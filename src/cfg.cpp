@@ -252,13 +252,25 @@ namespace lab
                     nr = visit(child, nr, depth + 1);
                     for (const auto &lc : nr.lc)
                     {
-                        for (const auto &f : lc.from)
+                        if (lc.kind == "break_statement")
                         {
-                            out.outs.push_back(ParentEdge{f});
+                            for (const auto &f : lc.from)
+                            {
+                                out.outs.push_back(ParentEdge{f});
+                            }
+                        }
+                        else
+                        {
+                            out.lc.push_back(lc);
                         }
                     }
                 }
+                for (const auto &o : nr.outs)
+                {
+                    out.outs.push_back(o);
+                }
                 switch_case_value.pop_front();
+                // eats both break and (now doesnt eat) continue. Nom nom. your loop no longer works
                 return out; // eat break statements
             }
             else if (n.kind() == "switch_section")
