@@ -28,6 +28,11 @@ namespace lab
         {
             return name + "." + std::to_string(version);
         }
+
+        bool operator==(const Variable &other) const
+        {
+            return this->name == other.name && this->version == other.version;
+        }
     };
     class VariableRegistry
     {
@@ -57,4 +62,36 @@ namespace lab
         std::unordered_map<std::string, Variable> deps;
     };
 
+    struct Phi
+    {
+        bool complete;
+        std::string id;
+        Variable out_var;
+        std::vector<Variable> ins;
+        bool operator==(const Phi &other) const
+        {
+            return this->id == other.id;
+        }
+    };
+
 } // namespace lab
+
+namespace std
+{
+    template <>
+    struct hash<lab::Variable>
+    {
+        std::size_t operator()(const lab::Variable &v) const
+        {
+            return std::hash<int>{}(v.version) ^ (std::hash<std::string>{}(v.name) << 1);
+        }
+    };
+    template <>
+    struct hash<lab::Phi>
+    {
+        std::size_t operator()(const lab::Phi &p) const
+        {
+            return (std::hash<std::string>{}(p.id) << 1);
+        }
+    };
+}

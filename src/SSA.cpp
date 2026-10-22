@@ -3,9 +3,40 @@
 #include <cassert>
 #include <unordered_set>
 #include <unordered_map>
+#include <deque>
 namespace lab
 {
     // std::string get_next_id(const Graph &g) { return "n" + std::to_string(g.nodes.size()); }
+
+    Variable get_replacement(Variable v, const std::unordered_map<Variable, Variable> &m)
+    {
+        while (m.contains(v))
+        {
+            v = m.at(v);
+        }
+        return v;
+    }
+    std::string render_node_label(std::string id, std::unordered_map<std::string, std::vector<std::variant<std::string, Variable>>> labels, std::unordered_map<Variable, Variable> r, std::string fallback)
+    {
+        auto node = labels.find(id);
+        if (node == labels.end())
+        {
+            return fallback;
+        }
+        std::string out;
+        for (const auto &p : node->second)
+        {
+            if (const auto *s = std::get_if<std::string>(&p))
+            {
+                out += *s;
+            }
+            else if (const auto *v = std::get_if<Variable>(&p))
+            {
+                out += get_replacement(*v, r).to_string();
+            }
+        }
+        return out;
+    }
     std::string get_next_id(const Graph &g); // TODO: This relies on cfg.hpp include, bad
 
     std::optional<GraphNode> find_node_in_graph(const Graph &g, const std::string &id)
@@ -52,6 +83,48 @@ namespace lab
         }
         return out;
     }
+
+    void build_label_from_identifiers(VariableRegistry &vr, const SyntaxNode &n, const std::string id, std::unordered_map<std::string, std::vector<std::variant<std::string, Variable>>> &labels)
+    {
+        std::string out;
+        if (n.kind() == "binary_expression")
+        {
+            build_label_from_identifiers(vr, n.field("left"), id, labels);
+            labels[id].push_back(" ");
+            build_label_from_identifiers(vr, n.field("operator"), id, labels);
+            labels[id].push_back(" ");
+            build_label_from_identifiers(vr, n.field("right"), id, labels);
+        }
+        else if (n.kind() == "identifier")
+        {
+            labels[id].push_back(vr.get_variable(std::string(n.text())));
+            // return vr.get_variable(std::string(n.text())).to_string();
+        }
+        else if (n.kind() == "prefix_unary_expression" || n.kind() == "postfix_unary_expression")
+        {
+            build_label_from_identifiers(vr, n.child(0), id, labels);
+            build_label_from_identifiers(vr, n.child(1), id, labels);
+            // return + // TODO: better to use a loop here
+        }
+        else
+        {
+            labels[id].push_back(std::string(n.text()));
+        }
+    }
+    std::string build_phi_label(Variable out, std::vector<Variable> ins, std::unordered_map<Variable, Variable> r)
+    {
+
+        std::string res = get_replacement(out, r).to_string() + " = (";
+        for (size_t i = 0; i < ins.size(); i++)
+        {
+            res += get_replacement(ins[i], r).to_string();
+            if (i != ins.size() - 1)
+            {
+                res += ", ";
+            }
+        }
+        return res;
+    }
     void parse_arguments(VariableRegistry &vr, const SyntaxNode &n)
     {
         for (const auto &param : n.field("parameters").children())
@@ -89,6 +162,7 @@ namespace lab
             }
         }
     }
+
     void update_phi_node(Graph &g, std::string id, PendingPhi &phi)
     {
         for (auto &node : g.nodes)
@@ -104,6 +178,8 @@ namespace lab
                         text += ", ";
                     }
                 }
+
+                // TODO: remove the last symbol (its the ",")
                 node.label = text + ")";
             }
         }
@@ -152,6 +228,9 @@ namespace lab
         std::unordered_map<std::string, std::vector<std::string>> phi_watchers;
         std::unordered_map<std::string, std::vector<ParentEdge>> pending_edges; // CFG id to SSA id
         std::unordered_map<std::string, PendingPhi> pending_phis;
+        std::unordered_map<std::string, std::vector<std::variant<std::string, Variable>>> labels;
+        std::vector<Phi> phis;
+        std::unordered_map<Variable, std::unordered_set<Phi>> var2phis;
         build_dependencies(preds, succs, cfg);
         parse_arguments(vr, method.root());
         GraphNode start;
@@ -261,10 +340,21 @@ namespace lab
                         // ssa.diagnostics.push_back(Diagnostic{"ssa_dbg", "Conflict size: " + std::to_string(conflicts.size()), n.range.value_or(SourceRange{})});
 
                         // Chain phi nodes one after the other
-
                         p = create_phi_node(vr, lvr, g, conflicts, n, p, name);
                         if (created_node_id == "")
                             created_node_id = p.outs[0].id;
+
+                        phis.push_back(Phi{
+                            !is_pending,
+                            p.outs[0].id,
+                            lvr.get_variable(name), conflicts});
+                        for (const auto &c : conflicts)
+                        {
+                            var2phis[c].insert(Phi{
+                                !is_pending,
+                                p.outs[0].id,
+                                lvr.get_variable(name), conflicts});
+                        }
                     }
                 }
                 else
@@ -274,11 +364,14 @@ namespace lab
                         std::unordered_map<std::string, Variable> deps;
 
                         std::vector<Variable> conflicts;
+                        std::vector<Variable> ready_ins;
                         for (const auto &pred : preds[n.id])
                         {
                             if (vars.contains(pred.id))
                             {
                                 conflicts.push_back(vars[pred.id].get_variable(name));
+                                ready_ins.push_back(vars[pred.id].get_variable(name));
+
                                 deps[pred.id] = vars[pred.id].get_variable(name);
                             }
                             else
@@ -298,6 +391,17 @@ namespace lab
                             p,
                             n,
                             deps};
+                        phis.push_back(Phi{
+                            !is_pending,
+                            p.outs[0].id,
+                            lvr.get_variable(name), ready_ins});
+                        for (const auto &c : ready_ins)
+                        {
+                            var2phis[c].insert(Phi{
+                                !is_pending,
+                                p.outs[0].id,
+                                lvr.get_variable(name), ready_ins});
+                        }
                         for (const auto &pred : preds[n.id])
                         {
                             if (!vars.contains(pred.id))
@@ -328,6 +432,8 @@ namespace lab
                 //         }
                 //     }
                 // }
+
+                // P is the created phi here
             }
             NodeResult new_parent = p;
 
@@ -378,6 +484,10 @@ namespace lab
                 // text = var.to_string() + " = " + std::string(rest.text());
                 text = var.to_string() + " = " + replace_identifiers(lvr, rest);
 
+                // The NEW label creation process
+                labels[id] = {var, " = "};
+                build_label_from_identifiers(lvr, rest, id, labels);
+
                 g.nodes.push_back(GraphNode{id, n.kind, text, n.range, n.syntax_node});
                 for (const auto &edge : p.outs)
                 {
@@ -423,15 +533,23 @@ namespace lab
                     const auto &v = vr.get_and_inc_variable(identifier, n.id);
                     lvr.set_version(v.name, v.version, n.id);
                     text = replace_identifiers(lvr, postfix_expression.value());
+                    labels[id] = {""};
+                    build_label_from_identifiers(lvr, postfix_expression.value(), id, labels);
                 }
                 else // It is an assignment
                 {
                     // Assumes left is identifier
                     std::string dest = std::string(assignment_expression.value().field("left").text());
                     std::string right = replace_identifiers(lvr, assignment_expression.value().field("right"));
+                    labels[id] = {};
+                    build_label_from_identifiers(lvr, assignment_expression.value().field("right"), id, labels);
+
                     const auto &v = vr.get_and_inc_variable(dest, n.id);
                     lvr.set_version(v.name, v.version, n.id);
                     text = lvr.get_variable(dest).to_string() + "=" + right;
+                    // labels[id] = {lvr.get_variable(dest), "="};
+                    labels[id].insert(labels[id].begin(), "=");
+                    labels[id].insert(labels[id].begin(), lvr.get_variable(dest));
                 }
                 g.nodes.push_back(GraphNode{id, n.kind, text, n.range, n.syntax_node});
                 for (const auto &edge : p.outs)
@@ -470,6 +588,10 @@ namespace lab
                 const auto v = vr.get_and_inc_variable(dest, id);
                 lvr.set_version(dest, v.version, id);
                 text = lvr.get_variable(dest).to_string() + "=" + right;
+                labels[id] = {lvr.get_variable(dest), "="};
+
+                build_label_from_identifiers(lvr, assignment_expression.field("right"), id, labels);
+
                 g.nodes.push_back(GraphNode{id, n.kind, text, n.range, n.syntax_node});
                 for (const auto &edge : p.outs)
                 {
@@ -489,9 +611,13 @@ namespace lab
                     return NodeResult{{}, {}};
                 }
                 std::string text = " ";
+                labels[id] = {""};
+
                 for (const auto &child : n.syntax_node.value().children())
                 {
                     text += replace_identifiers(lvr, child) + " ";
+                    build_label_from_identifiers(lvr, child, id, labels);
+                    labels[id].push_back(" ");
                 }
                 g.nodes.push_back(GraphNode{id, n.kind, text, n.range, n.syntax_node});
                 for (const auto &edge : p.outs)
@@ -516,6 +642,8 @@ namespace lab
                 const auto v = vr.get_and_inc_variable(dest, id);
                 lvr.set_version(dest, v.version, id);
                 text = lvr.get_variable(dest).to_string() + operation;
+
+                labels[id] = {lvr.get_variable(dest), operation};
                 g.nodes.push_back(GraphNode{id, n.kind, text, n.range, n.syntax_node});
                 for (const auto &edge : p.outs)
                 {
@@ -535,6 +663,8 @@ namespace lab
                     return NodeResult{{}, {}};
                 }
                 std::string text = replace_identifiers(lvr, n.syntax_node.value());
+                labels[id] = {""};
+                build_label_from_identifiers(lvr, n.syntax_node.value(), id, labels);
                 g.nodes.push_back(GraphNode{id, n.kind, text, n.range, n.syntax_node});
                 for (const auto &edge : p.outs)
                 {
@@ -577,6 +707,16 @@ namespace lab
                     phi.deps[n.id] = lvr.get_variable(phi.var);
                     // TODO: implement function which would re-generate phi's text based on phi.deps
                     update_phi_node(g, phi_id, phi);
+
+                    // Update phi ins
+                    for (auto &existing_phi : phis)
+                    {
+                        if (existing_phi.id == phi_id)
+                        {
+                            existing_phi.ins.push_back(lvr.get_variable(phi.var));
+                            var2phis[lvr.get_variable(phi.var)].insert(existing_phi);
+                        }
+                    }
                 }
             }
 
@@ -646,8 +786,111 @@ namespace lab
         visit(start, NodeResult{}, 0, vr);
         // ssa.diagnostics.push_back(Diagnostic{"", "Graph Size:" + std::to_string(ssa.graph.value().nodes.size()), SourceRange{}});
 
+        // Remove redundant phi nodes
+        std::unordered_map<Variable, Variable> replacement;
+        std::unordered_set<Phi> removed_phis;
+        std::deque<Phi> q(phis.begin(), phis.end());
+        while (!q.empty())
+        {
+            Phi phi = q.front();
+            q.pop_front();
+            if (removed_phis.contains(phi))
+            {
+                continue;
+            }
+            std::unordered_set<Variable> phi_variables;
+            for (const auto &v : phi.ins)
+            {
+                if (get_replacement(v, replacement) != get_replacement(phi.out_var, replacement))
+                {
+                    phi_variables.insert(get_replacement(v, replacement));
+                }
+            }
+            if (phi_variables.size() == 1)
+            { // Redundant phi
+                removed_phis.insert(phi);
+                replacement[phi.out_var] = *phi_variables.begin();
+                for (const auto &nphi : var2phis[phi.out_var])
+                {
+                    q.push_back(nphi);
+                }
+            }
+            else if (phi_variables.size() == 0)
+            {
+                // WTF
+                // Somehow our only predecessor for this var is ourselves
+            }
+        }
+
+        // Remove marked phis
+        for (const auto &phi : removed_phis)
+        {
+            std::vector<GraphEdge> to;
+            std::vector<GraphEdge> from;
+            for (auto &edge : g.edges)
+            {
+                if (edge.to == phi.id)
+                {
+                    to.push_back(edge);
+                }
+                if (edge.from == phi.id)
+                {
+                    from.push_back(edge);
+                }
+            }
+
+            // By this point, there should be either only 1 from, only 1 to, or 1 of both
+            if (to.size() != 1 && from.size() != 1)
+            {
+                // Cannot eliminate many-to-many
+                ssa.diagnostics.push_back(Diagnostic{"ssa-phi-elim-many-to-many", "Could not eliminate phi node: many to many relationship on a removed node", SourceRange{}});
+            }
+
+            for (const auto &t : to)
+            {
+                for (const auto &f : from)
+                {
+                    g.edges.push_back(GraphEdge{t.from, f.to, t.label, t.color}); // Losing label and color of phi->node edge, should be fine
+                }
+            }
+
+            for (const auto &t : to)
+            {
+                std::vector<int> vec = {1, 2, 3, 4, 5, 6};
+
+                std::erase_if(g.edges, [&](GraphEdge ge)
+                              { return ge.to == t.to && ge.from == t.from; });
+
+                // std::erase(g.edges, t);
+            }
+            for (const auto &f : from)
+            {
+                std::erase_if(g.edges, [&](GraphEdge ge)
+                              { return ge.to == f.to && ge.from == f.from; });
+
+                // std::erase(g.edges, from);
+            }
+            std::erase_if(g.nodes, [&](GraphNode n)
+                          { return n.id == phi.id; });
+        }
+
+        // Render all labels
+
+        for (auto &node : g.nodes)
+        {
+            node.label = render_node_label(node.id, labels, replacement, node.label);
+            if (node.kind == "phi")
+            {
+                auto phi = std::find_if(phis.begin(), phis.end(), [&](Phi p)
+                                        { return p.id == node.id; });
+                if (phi != phis.end())
+                {
+                    node.label = build_phi_label(phi->out_var, phi->ins, replacement);
+                }
+            }
+        }
+
         // ssa.graph = cfg;
-        // TODO: implement SSA on top of the method's control-flow graph.
 
         return ssa;
         // return {std::nullopt, {{"ssa_not_implemented", "SSA construction is not implemented yet.", {0, 0}}}};
