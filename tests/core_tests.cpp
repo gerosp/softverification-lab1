@@ -110,7 +110,7 @@ void protocol() {
     check(cfg["diagnostics"].empty(), "Unexpected CFG diagnostic");
     auto cfg_dot = cfg["dot"].get<std::string>();
     check(cfg_dot.starts_with("digraph \"CFG\""), "CFG graph name missing");
-    check(cfg_dot.find("label=\"return 1;\"") != std::string::npos, "CFG return statement missing");
+    check(cfg_dot.find("label=\"return 1\"") != std::string::npos, "CFG return statement missing");
     check(cfg_dot.find("method_declaration") == std::string::npos, "CFG leaked the AST");
     check(!cfg["nodeRanges"].empty(), "CFG source map missing");
     request["source"] = "int F() { return 1 }";
@@ -122,8 +122,12 @@ void protocol() {
     check(invalid_ssa["status"] == "syntax_error" && invalid_ssa["dot"].is_null(), "Invalid AST reached SSA pass");
     request["source"] = "int F() { return 1; }";
     auto ssa = lab::handle_request(request);
-    check(lab::response_exit_code(ssa) == 2 && ssa["diagnostics"][0]["code"] == "ssa_not_implemented", "SSA scaffold was not dispatched");
-    check(ssa["dot"].is_null() && ssa["nodeRanges"].empty(), "SSA scaffold leaked a different model");
+    check(ssa["requestId"] == 42 && lab::response_exit_code(ssa) == 0, "SSA success response");
+    check(ssa["status"] == "ok" && ssa["diagnostics"].empty(), "Unexpected SSA diagnostic");
+    auto ssa_dot = ssa["dot"].get<std::string>();
+    check(ssa_dot.starts_with("digraph \"SSA\""), "SSA graph name missing");
+    check(ssa_dot.find("method_declaration") == std::string::npos, "SSA leaked the AST");
+    check(!ssa["nodeRanges"].empty(), "SSA source map missing");
     request["view"] = "unknown";
     check(lab::response_exit_code(lab::handle_request(request)) == 2, "Unsupported view accepted");
     request["view"] = "syntax";

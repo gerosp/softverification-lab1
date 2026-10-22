@@ -53,7 +53,7 @@ test('CFG dispatch returns statements and rejects invalid syntax first', async (
   assert.equal(cfg.status, 'ok');
   assert.deepEqual(cfg.diagnostics, []);
   assert.match(cfg.dot, /^digraph "CFG"/);
-  assert.match(cfg.dot, /label="return x \+ 1;"/);
+  assert.match(cfg.dot, /label="return x \+ 1"/);
   assert.ok(Object.values(cfg.nodeRanges).some(range => request().source.slice(range.start, range.end) === 'return x + 1;'));
   const invalid = await (await post({ ...request('int F() { return 1 }'), view: 'cfg' })).json();
   assert.equal(invalid.status, 'syntax_error');
@@ -140,20 +140,28 @@ test('CLI file/stdin exports and exit codes', async () => {
   const cfgSexp = await cli(['parse', '--input', example, '--view', 'cfg', '--format', 'sexp']);
   assert.equal(cfgSexp.code, 2); assert.match(cfgSexp.stderr, /sexp is only available/);
   const ssa = await cli(['parse', '--input', example, '--view', 'ssa', '--format', 'json']);
-  assert.equal(ssa.code, 2);
-  assert.equal(JSON.parse(ssa.stdout).diagnostics[0].code, 'ssa_not_implemented');
-  assert.equal(JSON.parse(ssa.stdout).dot, null);
+  assert.equal(ssa.code, 0);
+  assert.equal(JSON.parse(ssa.stdout).status, 'ok');
+  assert.deepEqual(JSON.parse(ssa.stdout).diagnostics, []);
+  assert.equal(JSON.parse(ssa.stdout).tree.kind, 'method_declaration');
+  assert.match(JSON.parse(ssa.stdout).dot, /^digraph "SSA"/);
   const ssaDot = await cli(['parse', '--input', example, '--view', 'ssa', '--format', 'dot']);
-  assert.equal(ssaDot.code, 2); assert.equal(ssaDot.stdout, '');
-  assert.match(ssaDot.stderr, /ssa_not_implemented/);
+  assert.equal(ssaDot.code, 0); assert.equal(ssaDot.stderr, '');
+  assert.equal(JSON.parse(ssa.stdout).dot, ssaDot.stdout);
 });
 
-test('SSA dispatch reaches its scaffold without leaking a CFG and rejects invalid syntax', async () => {
-  const result = await (await post({ ...request(), view: 'ssa' })).json();
-  assert.equal(result.status, 'error');
-  assert.equal(result.diagnostics[0].code, 'ssa_not_implemented');
-  assert.equal(result.dot, null);
-  assert.deepEqual(result.nodeRanges, {});
+test('SSA dispatch returns a renderable graph and source ranges and rejects invalid syntax', async () => {
+  const response = await post({ ...request(), view: 'ssa' });
+  assert.equal(response.status, 200);
+  const result = await response.json();
+  assert.equal(result.status, 'ok');
+  assert.equal(result.requestId, 17);
+  assert.deepEqual(result.diagnostics, []);
+  assert.match(result.dot, /^digraph "SSA"/);
+  assert.doesNotMatch(result.dot, /method_declaration/);
+  assert.ok(Object.values(result.nodeRanges).some(range => request().source.slice(range.start, range.end) === 'return x + 1;'));
+  const viz = await instance();
+  assert.match(viz.renderString(result.dot, { format: 'svg' }), /<svg/);
   const invalid = await (await post({ ...request('int F() { return 1 }'), view: 'ssa' })).json();
   assert.equal(invalid.status, 'syntax_error');
   assert.equal(invalid.dot, null);
