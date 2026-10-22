@@ -83,7 +83,7 @@ test('switching AST/CFG reaches the pass without displaying AST as CFG', async (
   await ready(page);
   await expect(page.locator('#graph-pane')).toHaveAttribute('aria-label', 'Граф потока управления');
   await expect(page.getByRole('button', { name: 'CFG', exact: true })).toHaveAttribute('aria-pressed', 'true');
-  await expect(page.locator('#graph')).toContainText('return z;');
+  await expect(page.locator('#graph')).toContainText('return z');
   await expect(page.locator('#graph')).not.toContainText('method_declaration');
   await expect(page.getByRole('button', { name: 'DOT ↓' })).toBeEnabled();
   await replaceSource(page, 'int F() { return 1 }');
@@ -99,7 +99,7 @@ test('a CFG response uses shared rendering, source selection and CFG export name
   await page.goto('/'); await ready(page);
   await page.getByRole('button', { name: 'CFG', exact: true }).click(); await ready(page);
   await expect(page.locator('#status')).toContainText('6 узлов');
-  await page.locator('#graph g.node').filter({ hasText: 'return z;' }).click();
+  await page.locator('#graph g.node').filter({ has: page.locator('text', { hasText: /^return z$/ }) }).click();
   await expect(page.locator('.monaco-editor .selected-text').first()).toBeVisible();
   const dotDownload = page.waitForEvent('download');
   await page.getByRole('button', { name: 'DOT ↓' }).click();
@@ -127,7 +127,7 @@ test('late AST responses cannot overwrite the selected CFG view', async ({ page 
   await ready(page);
   await page.waitForTimeout(1500);
   await expect(page.locator('#graph svg')).toBeVisible();
-  await expect(page.locator('#graph')).toContainText('return 1;');
+  await expect(page.locator('#graph')).toContainText('return 1');
   await expect(page.locator('#graph')).not.toContainText('OldAst');
 });
 
@@ -172,7 +172,7 @@ test('wheel zoom anchors at the cursor, dragging pans without selecting, and fit
   expect((anchor.y - after.y) / after.height).toBeCloseTo((anchor.y - before.y) / before.height, 2);
   await page.getByRole('button', { name: 'Вписать', exact: true }).click();
   const fitted = await svg.boundingBox();
-  const node = await page.locator('#graph g.node').filter({ hasText: 'return z;' }).boundingBox();
+  const node = await page.locator('#graph g.node').filter({ has: page.locator('text', { hasText: /^return z$/ }) }).boundingBox();
   await page.mouse.move(node.x + node.width / 2, node.y + node.height / 2);
   await page.mouse.down(); await page.mouse.move(node.x + node.width / 2 + 65, node.y + node.height / 2 - 45, { steps: 8 }); await page.mouse.up();
   const moved = await svg.boundingBox();
@@ -181,7 +181,7 @@ test('wheel zoom anchors at the cursor, dragging pans without selecting, and fit
   await expect(page.locator('.monaco-editor .selected-text')).toHaveCount(0);
   await page.getByRole('button', { name: 'Вписать', exact: true }).click();
   expect((await svg.boundingBox()).x).toBeCloseTo(fitted.x, 0);
-  await page.locator('#graph g.node').filter({ hasText: 'return z;' }).click();
+  await page.locator('#graph g.node').filter({ has: page.locator('text', { hasText: /^return z$/ }) }).click();
   await expect(page.locator('.monaco-editor .selected-text').first()).toBeVisible();
 });
 
@@ -285,7 +285,7 @@ for (const fallback of [false, true]) {
   });
 }
 
-test('refresh retries unchanged source after backend failure and SSA reports its scaffold', async ({ page }) => {
+test('refresh retries unchanged source after backend failure and SSA renders and exports', async ({ page }) => {
   await page.goto('/'); await ready(page);
   await page.getByRole('button', { name: 'CFG', exact: true }).click(); await ready(page);
   await page.route('**/api/analyze', route => route.fulfill({ status: 502, contentType: 'application/json', body: JSON.stringify({ error: 'Analyzer unavailable' }) }));
@@ -298,8 +298,14 @@ test('refresh retries unchanged source after backend failure and SSA reports its
   expect((await refreshed).postDataJSON().source).toContain('int Compute');
   await ready(page);
   await page.getByRole('button', { name: 'SSA', exact: true }).click();
-  await expect(page.locator('#status')).toContainText('Построение SSA пока не реализовано');
-  await expect(page.locator('#graph svg')).toHaveCount(0);
-  await expect(page.locator('#dot')).toBeDisabled();
+  await ready(page);
+  await expect(page.getByRole('button', { name: 'SSA', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.locator('#graph')).toContainText('return z.0');
+  await expect(page.locator('#dot')).toBeEnabled();
+  const ssaDownload = page.waitForEvent('download');
+  await page.locator('#dot').click();
+  const dot = await ssaDownload;
+  expect(dot.suggestedFilename()).toBe('ssa.dot');
+  expect(await readFile(await dot.path(), 'utf8')).toContain('digraph "SSA"');
   await page.getByRole('button', { name: 'AST', exact: true }).click(); await ready(page);
 });

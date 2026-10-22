@@ -4,6 +4,7 @@
 #include <unordered_set>
 #include <unordered_map>
 #include <deque>
+#include <variant>
 namespace lab
 {
     // std::string get_next_id(const Graph &g) { return "n" + std::to_string(g.nodes.size()); }
